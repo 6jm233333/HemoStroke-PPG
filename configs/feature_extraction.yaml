@@ -100,8 +100,8 @@ labeling:
     end: -15
 
   ignore_ranges:
-    - [-135, -105]
-    - [-15, 999999]
+    - [-135, -105]  # Buffer between Normal and Warning
+    - [-15, inf]    # Post-warning and Post-stroke
 
 multi_horizon_packaging:
   enabled: true
