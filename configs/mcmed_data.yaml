@@ -5,7 +5,6 @@ paths:
   interim_root: data/interim/mcmed
   processed_root: data/processed/mcmed
 
-  # 原始输入
   visits_csv: data/raw/mcmed/visits.csv
   waveform_summary_csv: data/raw/mcmed/waveform_summary.csv
   waveforms_root: data/raw/mcmed/waveforms
@@ -18,11 +17,9 @@ paths:
   split_chrono_val_csv: data/raw/mcmed/split_chrono_val.csv
   split_chrono_test_csv: data/raw/mcmed/split_chrono_test.csv
 
-  # 你的中间/处理后表
   stroke_index_csv: data/interim/mcmed/stroke_index_raw.csv
   filtered_index_csv: data/processed/mcmed/stroke_index_filtered.csv
 
-  # 提取后特征
   feature_dir: data/processed/mcmed/features_raw
   cleaned_feature_dir: data/processed/mcmed/features_cleaned
   selected_feature_dir: data/processed/mcmed/features_selected
@@ -52,7 +49,7 @@ segment_filter:
 
 split:
   use_official_split: false
-  split_type: random   # random or chrono
+  split_type: random
   patient_level_grouping: true
 
 quality_control:
