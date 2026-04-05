@@ -58,3 +58,7 @@ quality_control:
     - WAVE_START
     - WAVE_END
     - WAVE_PATH
+
+time_processing:
+  utc_to_naive: true 
+  format: "%Y-%m-%d %H:%M:%S"
