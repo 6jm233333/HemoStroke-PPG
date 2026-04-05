@@ -5,22 +5,18 @@ paths:
   interim_root: data/interim/mimic
   processed_root: data/processed/mimic
 
-  # 原始输入
   icd9_icustays_merged_csv: data/raw/mimic/tables/ICD9_ICUSTAYS_MERGED.csv
   noteevents_csv: data/raw/mimic/tables/NOTEEVENTS.csv
   waveform_index_csv: data/raw/mimic/tables/Datasets_With_Time.csv
 
-  # 中间输出
   cleaned_note_table_csv: data/interim/mimic/STROKE_DATASET_CLEAN.csv
   note_table_with_time_csv: data/interim/mimic/FINAL_STROKE_DATASET_WITH_TIME.csv
   waveform_anchored_csv: data/interim/mimic/WAVEFORM_ANCHORED_STROKE_DATA.csv
 
-  # LLM 抽取相关
   llm_input_csv: data/interim/mimic/NLP/NLP.csv
   llm_chunk_dir: data/interim/mimic/NLP/Chunks_By_Row
   llm_output_csv: data/interim/mimic/NLP/extracted_timestamps.csv
 
-  # 最终用于特征提取的索引表
   feature_index_csv: data/processed/mimic/stroke_index_for_features.csv
 
 id_columns:
@@ -38,7 +34,7 @@ text_columns:
 
 waveform_columns:
   waveform_path: WAVE_PATH
-  original_waveform_path: Target Path
+  original_waveform_path: TARGET_PATH
 
 note_filter:
   require_charttime: true
