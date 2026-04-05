@@ -54,6 +54,11 @@ llm_chunking:
   soft_limit_chars: 200000
   drop_empty_text: true
 
+mimic_clinical_tables:
+  admissions: data/raw/mimic/tables/ADMISSIONS.csv
+  patients: data/raw/mimic/tables/PATIENTS.csv
+  diagnoses: data/raw/mimic/tables/DIAGNOSES_ICD.csv
+
 quality_control:
   save_processing_log: true
   fail_if_no_notes_found: true
