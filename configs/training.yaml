@@ -63,7 +63,7 @@ sampling:
 
 model:
   name: resnet1d
-  input_channels: 1
+  input_channels: 17
   num_classes: 2
   hidden_dim: 64
   dropout: 0.2
@@ -80,7 +80,7 @@ training:
   save_best_only: true
 
 evaluation:
-  threshold: 0.5
+  threshold: 0.7910
   metrics:
     - accuracy
     - precision
