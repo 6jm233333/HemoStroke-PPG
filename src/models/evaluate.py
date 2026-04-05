@@ -1,7 +1,6 @@
 from __future__ import annotations
 import argparse
 import json
-import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -14,13 +13,13 @@ from sklearn.metrics import (
     average_precision_score,
     confusion_matrix,
     f1_score,
+    fbeta_score,
     precision_score,
     recall_score,
     roc_auc_score,
 )
 from sklearn.model_selection import StratifiedGroupKFold
 from torch.utils.data import DataLoader, TensorDataset
-
 from src.models.resnet1d import resnet1d18
 
 
@@ -55,7 +54,6 @@ class EvalConfig:
     negative_label: int = 0
     ignore_label_value: int = -1
     drop_ignore_label: bool = True
-
     positive_class_weight: float = 3.0
 
     save_internal_predictions_csv: bool = True
@@ -63,6 +61,7 @@ class EvalConfig:
     save_fold_metrics_csv: bool = True
     save_horizon_summary_csv: bool = True
     save_confusion_matrix_csv: bool = True
+    save_main_performance_table_csv: bool = True
 
     num_workers: int = 0
     pin_memory: bool = True
@@ -109,6 +108,14 @@ def load_yaml_config(path: Path) -> Dict[str, Any]:
         return yaml.safe_load(f)
 
 
+def format_mean_std(mean_val: float, std_val: float, digits: int = 4) -> str:
+    if pd.isna(mean_val):
+        return "nan"
+    if pd.isna(std_val):
+        return f"{mean_val:.{digits}f} ± nan"
+    return f"{mean_val:.{digits}f} ± {std_val:.{digits}f}"
+
+
 # =============================================================================
 # Config parsing
 # =============================================================================
@@ -143,6 +150,7 @@ def build_eval_config(cfg_dict: Dict[str, Any]) -> EvalConfig:
         save_fold_metrics_csv=bool(eval_cfg.get("save_fold_metrics_csv", True)),
         save_horizon_summary_csv=bool(deep_get(cfg_dict, ["comparison", "save_horizon_summary_table"], True)),
         save_confusion_matrix_csv=bool(eval_cfg.get("save_confusion_matrix", True)),
+        save_main_performance_table_csv=bool(deep_get(cfg_dict, ["comparison", "save_horizon_summary_table"], True)),
         num_workers=int(training_cfg.get("num_workers", 0)),
         pin_memory=bool(training_cfg.get("pin_memory", True)),
     )
@@ -219,8 +227,7 @@ def load_merged_internal_arrays(root_dir: Path) -> Tuple[np.ndarray, np.ndarray,
 
 def load_external_test_arrays(root_dir: Path) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    External evaluation is intentionally strict: only test_* arrays are allowed.
-    This prevents accidental leakage from train/val arrays in the external folder.
+    External evaluation is strict: only test_* arrays are used.
     """
     triplet = _load_triplet(root_dir, "test")
     if triplet is None:
@@ -327,9 +334,25 @@ def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray, prob_pos: np.ndarray
         "recall": float(recall_score(y_true, y_pred, zero_division=0)),
         "f1": float(f1_score(y_true, y_pred, zero_division=0)),
         "macro_f1": float(f1_score(y_true, y_pred, average="macro", zero_division=0)),
+        "f2": float(fbeta_score(y_true, y_pred, beta=2, zero_division=0)),
         "auc": safe_auc(y_true, prob_pos),
         "auprc": safe_auprc(y_true, prob_pos),
     }
+
+
+def summarize_metrics_dataframe(fold_df: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    for metric in ["loss", "accuracy", "recall", "precision", "f1", "f2", "macro_f1", "auc", "auprc"]:
+        if metric not in fold_df.columns:
+            continue
+        rows.append(
+            {
+                "metric": metric,
+                "mean": float(fold_df[metric].mean()),
+                "std": float(fold_df[metric].std(ddof=0)),
+            }
+        )
+    return pd.DataFrame(rows)
 
 
 def save_confusion_matrix_csv(cm: np.ndarray, path: Path) -> None:
@@ -525,6 +548,7 @@ def evaluate_internal_cv(
                 "precision": metrics["precision"],
                 "recall": metrics["recall"],
                 "f1": metrics["f1"],
+                "f2": metrics["f2"],
                 "macro_f1": metrics["macro_f1"],
                 "auc": metrics["auc"],
                 "auprc": metrics["auprc"],
@@ -542,7 +566,7 @@ def evaluate_internal_cv(
                     prob_pos=pred_bundle["probs"][:, 1],
                     pid=pid_val,
                     split_name="internal_val",
-                    dataset_name="mimic",
+                    dataset_name="MIMIC-III",
                     horizon_name=spec.name,
                     horizon_minutes=spec.minutes,
                     fold=fold_idx,
@@ -556,17 +580,7 @@ def evaluate_internal_cv(
             )
 
     fold_df = pd.DataFrame(fold_rows)
-
-    summary_rows = []
-    for metric in ["loss", "accuracy", "precision", "recall", "f1", "macro_f1", "auc", "auprc"]:
-        summary_rows.append(
-            {
-                "metric": metric,
-                "mean": float(fold_df[metric].mean()),
-                "std": float(fold_df[metric].std(ddof=0)),
-            }
-        )
-    summary_df = pd.DataFrame(summary_rows)
+    summary_df = summarize_metrics_dataframe(fold_df)
 
     if cfg.save_fold_metrics_csv:
         save_dataframe(fold_df, spec.output_dir / "eval_internal_fold_metrics.csv")
@@ -588,10 +602,118 @@ def evaluate_internal_cv(
 
 
 # =============================================================================
-# External evaluation
+# External evaluation: five-fold summary
 # =============================================================================
 
-def evaluate_external_test(
+def evaluate_external_fivefold(
+    *,
+    spec: HorizonSpec,
+    cfg: EvalConfig,
+    model_dropout: float,
+    device: torch.device,
+) -> Optional[Dict[str, Any]]:
+    if spec.external_dir is None or not spec.external_dir.exists():
+        return None
+
+    x_test, y_test, pid_test = load_external_test_arrays(spec.external_dir)
+    x_test, y_test, pid_test = filter_labels(
+        x_test,
+        y_test,
+        pid_test,
+        positive_label=cfg.positive_label,
+        negative_label=cfg.negative_label,
+        drop_ignore_label=cfg.drop_ignore_label,
+        ignore_label_value=cfg.ignore_label_value,
+    )
+
+    fold_rows: List[Dict[str, Any]] = []
+    pred_parts: List[pd.DataFrame] = []
+
+    for fold_idx in range(1, cfg.n_splits + 1):
+        ckpt_path = spec.output_dir / "checkpoints" / f"fold_{fold_idx}_best.pth"
+        if not ckpt_path.exists():
+            raise FileNotFoundError(f"Missing fold checkpoint for external evaluation: {ckpt_path}")
+
+        eval_res = evaluate_checkpoint(
+            checkpoint_path=ckpt_path,
+            x_eval=x_test,
+            y_eval=y_test,
+            batch_size=cfg.batch_size,
+            positive_class_weight=cfg.positive_class_weight,
+            dropout=model_dropout,
+            device=device,
+            num_workers=cfg.num_workers,
+            pin_memory=cfg.pin_memory,
+        )
+
+        metrics = eval_res["metrics"]
+        pred_bundle = eval_res["pred_bundle"]
+
+        fold_rows.append(
+            {
+                "fold": fold_idx,
+                "loss": metrics["loss"],
+                "accuracy": metrics["accuracy"],
+                "precision": metrics["precision"],
+                "recall": metrics["recall"],
+                "f1": metrics["f1"],
+                "f2": metrics["f2"],
+                "macro_f1": metrics["macro_f1"],
+                "auc": metrics["auc"],
+                "auprc": metrics["auprc"],
+                "n_test_samples": int(len(y_test)),
+                "n_test_patients": int(len(np.unique(pid_test))),
+                "checkpoint_path": str(ckpt_path),
+            }
+        )
+
+        if cfg.save_external_predictions_csv:
+            pred_parts.append(
+                predictions_to_dataframe(
+                    y_true=pred_bundle["trues"],
+                    y_pred=pred_bundle["preds"],
+                    prob_pos=pred_bundle["probs"][:, 1],
+                    pid=pid_test,
+                    split_name="external_test",
+                    dataset_name="MC-MED",
+                    horizon_name=spec.name,
+                    horizon_minutes=spec.minutes,
+                    fold=fold_idx,
+                )
+            )
+
+        if cfg.save_confusion_matrix_csv:
+            save_confusion_matrix_csv(
+                metrics["confusion_matrix"],
+                spec.output_dir / "external" / f"eval_external_fold_{fold_idx}_confusion_matrix.csv",
+            )
+
+    fold_df = pd.DataFrame(fold_rows)
+    summary_df = summarize_metrics_dataframe(fold_df)
+
+    save_dataframe(fold_df, spec.output_dir / "external" / "eval_external_fold_metrics.csv")
+    save_dataframe(summary_df, spec.output_dir / "external" / "eval_external_mean_std_summary.csv")
+
+    if pred_parts and cfg.save_external_predictions_csv:
+        pred_df = pd.concat(pred_parts, ignore_index=True)
+        save_dataframe(pred_df, spec.output_dir / "external" / "eval_external_predictions.csv")
+    else:
+        pred_df = pd.DataFrame()
+
+    return {
+        "fold_df": fold_df,
+        "summary_df": summary_df,
+        "pred_df": pred_df,
+        "n_samples": int(len(y_test)),
+        "n_patients": int(len(np.unique(pid_test))),
+    }
+
+
+# =============================================================================
+# Optional external single-model evaluation
+# =============================================================================
+
+def evaluate_external_single_model(
     *,
     spec: HorizonSpec,
     cfg: EvalConfig,
@@ -639,6 +761,7 @@ def evaluate_external_test(
                 "precision": metrics["precision"],
                 "recall": metrics["recall"],
                 "f1": metrics["f1"],
+                "f2": metrics["f2"],
                 "macro_f1": metrics["macro_f1"],
                 "auc": metrics["auc"],
                 "auprc": metrics["auprc"],
@@ -648,28 +771,25 @@ def evaluate_external_test(
             }
         ]
     )
-    save_dataframe(metrics_df, spec.output_dir / "external" / "eval_external_metrics.csv")
+    save_dataframe(metrics_df, spec.output_dir / "external" / "eval_external_single_metrics.csv")
 
-    if cfg.save_external_predictions_csv:
-        pred_df = predictions_to_dataframe(
-            y_true=pred_bundle["trues"],
-            y_pred=pred_bundle["preds"],
-            prob_pos=pred_bundle["probs"][:, 1],
-            pid=pid_test,
-            split_name="external_test",
-            dataset_name="mcmed",
-            horizon_name=spec.name,
-            horizon_minutes=spec.minutes,
-            fold=None,
-        )
-        save_dataframe(pred_df, spec.output_dir / "external" / "eval_external_predictions.csv")
-    else:
-        pred_df = pd.DataFrame()
+    pred_df = predictions_to_dataframe(
+        y_true=pred_bundle["trues"],
+        y_pred=pred_bundle["preds"],
+        prob_pos=pred_bundle["probs"][:, 1],
+        pid=pid_test,
+        split_name="external_test_single_model",
+        dataset_name="MC-MED",
+        horizon_name=spec.name,
+        horizon_minutes=spec.minutes,
+        fold=None,
+    )
+    save_dataframe(pred_df, spec.output_dir / "external" / "eval_external_single_predictions.csv")
 
     if cfg.save_confusion_matrix_csv:
         save_confusion_matrix_csv(
             metrics["confusion_matrix"],
-            spec.output_dir / "external" / "eval_external_confusion_matrix.csv",
+            spec.output_dir / "external" / "eval_external_single_confusion_matrix.csv",
         )
 
     return {
@@ -681,8 +801,56 @@ def evaluate_external_test(
 
 
 # =============================================================================
-# Horizon-level summary
+# Main performance table
 # =============================================================================
+
+def summary_df_to_metric_map(summary_df: pd.DataFrame) -> Dict[str, Tuple[float, float]]:
+    out: Dict[str, Tuple[float, float]] = {}
+    for _, row in summary_df.iterrows():
+        out[str(row["metric"])] = (float(row["mean"]), float(row["std"]))
+    return out
+
+
+def build_main_performance_table(results: List[Dict[str, Any]]) -> pd.DataFrame:
+    rows: List[Dict[str, Any]] = []
+
+    for res in results:
+        spec = res["spec"]
+
+        # Internal row
+        internal_map = summary_df_to_metric_map(res["internal"]["summary_df"])
+        rows.append(
+            {
+                "Window": f"{spec.minutes} min",
+                "Dataset": "MIMIC-III",
+                "Accuracy": format_mean_std(*internal_map.get("accuracy", (np.nan, np.nan))),
+                "Recall": format_mean_std(*internal_map.get("recall", (np.nan, np.nan))),
+                "Precision": format_mean_std(*internal_map.get("precision", (np.nan, np.nan))),
+                "F1-score": format_mean_std(*internal_map.get("f1", (np.nan, np.nan))),
+                "F2-score": format_mean_std(*internal_map.get("f2", (np.nan, np.nan))),
+                "AUC": format_mean_std(*internal_map.get("auc", (np.nan, np.nan))),
+            }
+        )
+
+        # External row: five-fold summary over the 5 fold checkpoints
+        external_fivefold = res.get("external_fivefold")
+        if external_fivefold is not None:
+            external_map = summary_df_to_metric_map(external_fivefold["summary_df"])
+            rows.append(
+                {
+                    "Window": "",
+                    "Dataset": "MC-MED",
+                    "Accuracy": format_mean_std(*external_map.get("accuracy", (np.nan, np.nan))),
+                    "Recall": format_mean_std(*external_map.get("recall", (np.nan, np.nan))),
+                    "Precision": format_mean_std(*external_map.get("precision", (np.nan, np.nan))),
+                    "F1-score": format_mean_std(*external_map.get("f1", (np.nan, np.nan))),
+                    "F2-score": format_mean_std(*external_map.get("f2", (np.nan, np.nan))),
+                    "AUC": format_mean_std(*external_map.get("auc", (np.nan, np.nan))),
+                }
+            )
+
+    return pd.DataFrame(rows)
+
 
 def summarize_horizons(results: List[Dict[str, Any]], output_root: Path) -> None:
     rows = []
@@ -690,7 +858,7 @@ def summarize_horizons(results: List[Dict[str, Any]], output_root: Path) -> None
     for res in results:
         spec = res["spec"]
         internal_summary = res["internal"]["summary_df"]
-        ext_res = res["external"]
+        ext_fivefold = res.get("external_fivefold")
 
         row = {
             "horizon_name": spec.name,
@@ -701,10 +869,10 @@ def summarize_horizons(results: List[Dict[str, Any]], output_root: Path) -> None
             row[f"internal_{r['metric']}_mean"] = r["mean"]
             row[f"internal_{r['metric']}_std"] = r["std"]
 
-        if ext_res is not None:
-            ext_metrics = ext_res["metrics_df"].iloc[0].to_dict()
-            for k in ["loss", "accuracy", "precision", "recall", "f1", "macro_f1", "auc", "auprc"]:
-                row[f"external_{k}"] = ext_metrics.get(k, np.nan)
+        if ext_fivefold is not None:
+            for _, r in ext_fivefold["summary_df"].iterrows():
+                row[f"external_{r['metric']}_mean"] = r["mean"]
+                row[f"external_{r['metric']}_std"] = r["std"]
 
         rows.append(row)
 
@@ -732,7 +900,14 @@ def run_single_horizon_eval(
         device=device,
     )
 
-    external_res = evaluate_external_test(
+    external_fivefold_res = evaluate_external_fivefold(
+        spec=spec,
+        cfg=cfg,
+        model_dropout=model_dropout,
+        device=device,
+    )
+
+    external_single_res = evaluate_external_single_model(
         spec=spec,
         cfg=cfg,
         model_dropout=model_dropout,
@@ -748,9 +923,10 @@ def run_single_horizon_eval(
         "device": str(device),
         "internal_n_samples": internal_res["n_samples"],
         "internal_n_patients": internal_res["n_patients"],
-        "external_n_samples": external_res["n_samples"] if external_res is not None else None,
-        "external_n_patients": external_res["n_patients"] if external_res is not None else None,
-        "external_eval_mode": "test_only" if external_res is not None else None,
+        "external_n_samples": external_fivefold_res["n_samples"] if external_fivefold_res is not None else None,
+        "external_n_patients": external_fivefold_res["n_patients"] if external_fivefold_res is not None else None,
+        "external_eval_mode": "fivefold_checkpoints_on_test" if external_fivefold_res is not None else None,
+        "f2_enabled": True,
     }
     save_json(manifest, spec.output_dir / "eval_manifest.json")
 
@@ -758,7 +934,8 @@ def run_single_horizon_eval(
         "spec": spec,
         "manifest": manifest,
         "internal": internal_res,
-        "external": external_res,
+        "external_fivefold": external_fivefold_res,
+        "external_single": external_single_res,
     }
 
 
@@ -824,6 +1001,10 @@ def main() -> None:
         )
         results = [run_single_horizon_eval(spec=spec, cfg=eval_cfg, full_cfg=cfg_dict)]
         summarize_horizons(results, spec.output_dir.parent)
+
+        main_table = build_main_performance_table(results)
+        save_dataframe(main_table, spec.output_dir.parent / "eval_main_performance_table.csv")
+
         print(f"Finished evaluation: {spec.name}")
         return
 
@@ -840,9 +1021,16 @@ def main() -> None:
         results.append(res)
 
     common_root = Path("outputs") / "main"
+    ensure_dir(common_root)
+
     summarize_horizons(results, common_root)
+    main_table = build_main_performance_table(results)
+    save_dataframe(main_table, common_root / "eval_main_performance_table.csv")
+
     print("=" * 88)
     print("Evaluation finished.")
+    print(f"Horizon summary: {common_root / 'eval_all_horizon_summary.csv'}")
+    print(f"Main table     : {common_root / 'eval_main_performance_table.csv'}")
 
 
 if __name__ == "__main__":
