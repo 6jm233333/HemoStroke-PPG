@@ -1,4 +1,4 @@
-name: HemoStroke-PPG
+name: hemostroke-ppg
 channels:
   - pytorch
   - nvidia
