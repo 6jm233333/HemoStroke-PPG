@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import argparse
@@ -10,19 +9,16 @@ from typing import Dict, List, Optional, Sequence
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-
-# allow "python scripts/reproduce/figure_subgroup_f1.py" from repo root
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.analysis.subgroup_statistics import (  # noqa: E402
+from src.analysis.subgroup_statistics import ( 
+    analyze_all_panels,
     build_significance_annotations,
-    run_multi_group_test,
-    run_two_group_test,
-    summarize_subgroup_f1,
 )
-
 
 PANEL_ALIASES = ["panel", "domain", "category", "subgroup_type", "panel_name"]
 SUBGROUP_ALIASES = ["subgroup", "group", "group_name", "level", "label"]
@@ -31,19 +27,27 @@ F1_ALIASES = ["f1", "f1_score", "macro_f1", "binary_f1"]
 
 
 DEFAULT_PANEL_ORDER = ["Clinical Risk", "Race", "Age", "Gender"]
+
 DEFAULT_SUBGROUP_ORDER = {
     "Clinical Risk": ["Low Risk", "Medium Risk", "High Risk"],
     "Race": ["White", "Asian", "Black"],
     "Age": ["Elderly (≥65)", "Non-Elderly"],
     "Gender": ["Male", "Female"],
 }
+
+# close to the screenshot
 DEFAULT_PANEL_COLORS = {
-    "Clinical Risk": "#E66789",
-    "Race": "#D5D05E",
-    "Age": "#4E9AE8",
-    "Gender": "#2EC4B6",
+    "Clinical Risk": "#E878A0",   # pink
+    "Race": "#ECEA7A",            # pale yellow
+    "Age": "#5CA4F2",             # blue
+    "Gender": "#53D8C0",          # teal
 }
 
+FIG_BG = "#F2F2F2"
+AX_BG = "#F2F2F2"
+GRID_COLOR = "#CFCFCF"
+AVG_LINE_COLOR = "#7A7A7A"
+EDGE_COLOR = "#2D2D2D"
 
 def _find_first_existing(columns: Sequence[str], aliases: Sequence[str]) -> Optional[str]:
     colset = {str(c).strip(): c for c in columns}
@@ -64,7 +68,6 @@ def _collect_csv_files(path_like: str) -> List[Path]:
 
 def _normalize_panel_name(x: str) -> str:
     s = str(x).strip().lower()
-
     mapping = {
         "clinical risk": "Clinical Risk",
         "risk": "Clinical Risk",
@@ -80,50 +83,87 @@ def _normalize_panel_name(x: str) -> str:
 
 def _normalize_subgroup_name(panel: str, subgroup: str) -> str:
     s = str(subgroup).strip()
-    p = panel
+    s_low = s.lower()
 
-    if p == "Clinical Risk":
+    if panel == "Clinical Risk":
         lut = {
             "low": "Low Risk",
             "low risk": "Low Risk",
             "medium": "Medium Risk",
             "medium risk": "Medium Risk",
+            "mid": "Medium Risk",
             "mid risk": "Medium Risk",
             "high": "High Risk",
             "high risk": "High Risk",
         }
-        return lut.get(s.lower(), s)
+        return lut.get(s_low, s)
 
-    if p == "Race":
+    if panel == "Race":
         lut = {
             "white": "White",
             "asian": "Asian",
             "black": "Black",
             "black or african american": "Black",
         }
-        return lut.get(s.lower(), s)
+        return lut.get(s_low, s)
 
-    if p == "Age":
-        s_low = s.lower()
+    if panel == "Age":
         if "elder" in s_low or "≥65" in s or ">=65" in s:
             return "Elderly (≥65)"
-        if "non" in s_low or "<65" in s or "under" in s_low:
+        if "non" in s_low or "<65" in s_low or "under" in s_low:
             return "Non-Elderly"
         return s
 
-    if p == "Gender":
+    if panel == "Gender":
         lut = {
+            "m": "Male",
             "male": "Male",
+            "f": "Female",
             "female": "Female",
             "man": "Male",
             "woman": "Female",
         }
-        return lut.get(s.lower(), s)
+        return lut.get(s_low, s)
 
     return s
 
 
+def _set_plot_style() -> None:
+    plt.rcParams.update(
+        {
+            "figure.facecolor": FIG_BG,
+            "axes.facecolor": AX_BG,
+            "savefig.facecolor": FIG_BG,
+            "font.family": "serif",
+            "font.serif": ["Times New Roman", "Times", "DejaVu Serif"],
+            "font.size": 11,
+            "axes.titlesize": 14,
+            "axes.titleweight": "bold",
+            "axes.labelsize": 12,
+            "axes.labelweight": "bold",
+            "xtick.labelsize": 10.5,
+            "ytick.labelsize": 10.5,
+            "axes.linewidth": 1.2,
+            "hatch.linewidth": 1.2,
+        }
+    )
+
+
 def _load_fold_level_f1(path_like: str) -> pd.DataFrame:
+    """
+    Reads one CSV or a directory of CSVs.
+
+    Required semantic columns:
+    - subgroup
+    - f1
+
+    Optional:
+    - panel
+    - fold
+
+    If panel is missing, infer from filename.
+    If fold is missing, infer from filename; otherwise default 0.
+    """
     frames = []
     files = _collect_csv_files(path_like)
 
@@ -152,12 +192,14 @@ def _load_fold_level_f1(path_like: str) -> pd.DataFrame:
         if panel_col is not None:
             keep.append(panel_col)
             rename[panel_col] = "panel"
+
         if fold_col is not None:
             keep.append(fold_col)
             rename[fold_col] = "fold"
 
         part = df[keep].rename(columns=rename).copy()
 
+        # infer panel from filename if absent
         if "panel" not in part.columns:
             stem = fp.stem.lower()
             inferred_panel = None
@@ -168,10 +210,11 @@ def _load_fold_level_f1(path_like: str) -> pd.DataFrame:
             if inferred_panel is None:
                 raise ValueError(
                     f"Could not infer panel for '{fp.name}'. "
-                    "Please include a panel column or put panel name in the filename."
+                    "Please include a panel column or encode risk/race/age/gender in filename."
                 )
             part["panel"] = inferred_panel
 
+        # infer fold from filename if absent
         if "fold" not in part.columns:
             m = re.search(r"(?:fold|cv|split)[_\-]?(\d+)", fp.stem.lower())
             part["fold"] = int(m.group(1)) if m else 0
@@ -183,6 +226,7 @@ def _load_fold_level_f1(path_like: str) -> pd.DataFrame:
         ]
         part["f1"] = pd.to_numeric(part["f1"], errors="coerce")
         part["fold"] = pd.to_numeric(part["fold"], errors="coerce")
+
         part = part.dropna(subset=["f1", "fold"])
         part["fold"] = part["fold"].astype(int)
 
@@ -191,31 +235,195 @@ def _load_fold_level_f1(path_like: str) -> pd.DataFrame:
     if not frames:
         raise ValueError(f"No usable fold-level subgroup F1 CSVs found under: {path_like}")
 
-    return pd.concat(frames, ignore_index=True)
+    out = pd.concat(frames, ignore_index=True)
+
+    # keep only panels in desired order if possible
+    out = out[out["panel"].isin(DEFAULT_PANEL_ORDER)].copy()
+    if out.empty:
+        raise ValueError("After normalization, no valid panels remained.")
+
+    return out
 
 
-def _plot_sig_bracket(ax, x1: float, x2: float, y: float, text: str, h: float = 0.004) -> None:
-    ax.plot([x1, x1, x2, x2], [y, y + h, y + h, y], lw=1.1, c="black")
-    ax.text((x1 + x2) / 2.0, y + h + 0.002, text, ha="center", va="bottom", fontsize=11)
+def _draw_sig_bracket(
+    ax,
+    x1: float,
+    x2: float,
+    y: float,
+    text: str,
+    barh: float = 0.0028,
+    fs: float = 12.0,
+) -> None:
+    ax.plot(
+        [x1, x1, x2, x2],
+        [y, y + barh, y + barh, y],
+        lw=1.1,
+        c="black",
+        solid_capstyle="butt",
+        clip_on=False,
+        zorder=6,
+    )
+    ax.text(
+        (x1 + x2) / 2.0,
+        y + barh + 0.0012,
+        text,
+        ha="center",
+        va="bottom",
+        fontsize=fs,
+        fontweight="bold",
+        color="black",
+        zorder=7,
+    )
 
 
-def _panel_test_table(panel_df: pd.DataFrame, panel_name: str) -> pd.DataFrame:
-    unique_groups = list(pd.unique(panel_df["subgroup"]))
-    if len(unique_groups) < 2:
-        return pd.DataFrame()
+def _get_panel_ylim(
+    panel_summary: pd.DataFrame,
+    annotations: List[Dict[str, float]],
+    base_min: float = 0.82,
+) -> tuple[float, float]:
+    y = panel_summary["f1_mean"].to_numpy(dtype=float)
+    err = panel_summary["f1_std"].to_numpy(dtype=float)
+    top = float(np.max(y + err)) if len(y) > 0 else 1.0
 
-    if len(unique_groups) == 2:
-        pairwise = run_two_group_test(panel_df, group_col="subgroup", value_col="f1")
-        pairwise["panel"] = panel_name
-        return pairwise
+    if annotations:
+        top = max(top, max(a["text_y"] for a in annotations) + 0.010)
 
-    res = run_multi_group_test(panel_df, group_col="subgroup", value_col="f1", correction="bonferroni")
-    pairwise = res["pairwise"].copy()
-    pairwise["panel"] = panel_name
-    pairwise["global_test"] = res["global"]["test"].iloc[0]
-    pairwise["global_p_raw"] = res["global"]["p_raw"].iloc[0]
-    pairwise["global_p_adj"] = res["global"]["p_adj"].iloc[0]
-    return pairwise
+    ymin = base_min
+    ymax = max(1.005, top + 0.006)
+    ymax = min(ymax, 1.03)
+    return ymin, ymax
+
+
+def _format_value_label(v: float) -> str:
+    return f"{v:.3f}"
+
+
+def _plot_single_panel(
+    ax,
+    panel_name: str,
+    panel_summary: pd.DataFrame,
+    panel_pairs: pd.DataFrame,
+    panel_letter: str,
+) -> None:
+    subgroup_order = DEFAULT_SUBGROUP_ORDER.get(panel_name, panel_summary["subgroup"].tolist())
+    panel_summary = panel_summary.copy()
+    panel_summary["subgroup"] = pd.Categorical(
+        panel_summary["subgroup"],
+        categories=subgroup_order,
+        ordered=True,
+    )
+    panel_summary = panel_summary.sort_values("subgroup").reset_index(drop=True)
+
+    x = np.arange(len(panel_summary), dtype=float)
+    y = panel_summary["f1_mean"].to_numpy(dtype=float)
+    err = panel_summary["f1_std"].to_numpy(dtype=float)
+
+    bar_color = DEFAULT_PANEL_COLORS.get(panel_name, "#5B8FF9")
+    bars = ax.bar(
+        x,
+        y,
+        width=0.50,
+        color=bar_color,
+        edgecolor=EDGE_COLOR,
+        linewidth=1.2,
+        hatch="//",
+        yerr=err,
+        error_kw={
+            "elinewidth": 1.1,
+            "ecolor": "black",
+            "capsize": 4,
+            "capthick": 1.1,
+        },
+        zorder=3,
+    )
+
+    # group average dashed line
+    group_avg = float(np.mean(y)) if len(y) else 0.95
+    ax.axhline(
+        group_avg,
+        linestyle="--",
+        linewidth=1.2,
+        color=AVG_LINE_COLOR,
+        alpha=0.95,
+        zorder=2,
+    )
+
+    # significance annotations
+    annotations = build_significance_annotations(
+        summary_df=panel_summary.assign(panel=panel_name),
+        pairwise_df=panel_pairs,
+        panel=panel_name,
+        subgroup_order=subgroup_order,
+        mean_col="f1_mean",
+        err_col="f1_std",
+        alpha=0.05,
+        start_pad=0.006,
+        step=0.012,
+        text_pad=0.003,
+        only_significant=True,
+    )
+
+    for ann in annotations:
+        _draw_sig_bracket(
+            ax=ax,
+            x1=ann["x1"],
+            x2=ann["x2"],
+            y=ann["y"],
+            text=ann["text"],
+            barh=0.0028,
+            fs=12.0,
+        )
+
+    # value labels
+    for rect, yi in zip(bars, y):
+        cx = rect.get_x() + rect.get_width() / 2.0
+        ax.text(
+            cx,
+            yi + 0.004,
+            _format_value_label(yi),
+            ha="center",
+            va="bottom",
+            fontsize=10,
+            fontweight="bold",
+            color="black",
+            zorder=8,
+        )
+
+    ymin, ymax = _get_panel_ylim(panel_summary, annotations, base_min=0.82)
+    ax.set_ylim(ymin, ymax)
+    ax.set_xlim(-0.55, len(panel_summary) - 0.45)
+
+    ax.set_title(panel_name, pad=8)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(subgroup_order, fontweight="bold")
+
+    # only left column has ylabel in the screenshot
+    ax.set_ylabel("F1-Score" if panel_letter in ["a", "c"] else "")
+
+    ax.grid(axis="y", linestyle="--", linewidth=0.7, color=GRID_COLOR, alpha=0.7, zorder=1)
+    ax.grid(axis="x", visible=False)
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_linewidth(1.2)
+    ax.spines["bottom"].set_linewidth(1.2)
+
+    ax.tick_params(axis="x", length=0)
+    ax.tick_params(axis="y", width=1.0)
+
+    # panel letters: a / b / c / d
+    ax.text(
+        -0.12,
+        1.02,
+        panel_letter,
+        transform=ax.transAxes,
+        fontsize=12,
+        fontweight="bold",
+        ha="left",
+        va="bottom",
+        color="black",
+    )
 
 
 def plot_subgroup_figure(
@@ -223,146 +431,142 @@ def plot_subgroup_figure(
     pairwise_df: pd.DataFrame,
     output_png: Path,
     output_pdf: Path,
-    title: str,
 ) -> None:
-    fig, axes = plt.subplots(2, 2, figsize=(11.5, 8.2))
+    _set_plot_style()
+
+    fig, axes = plt.subplots(
+        2,
+        2,
+        figsize=(10.0, 5.8),
+        facecolor=FIG_BG,
+    )
     axes = axes.flatten()
     panel_letters = ["a", "b", "c", "d"]
 
     for i, panel_name in enumerate(DEFAULT_PANEL_ORDER):
         ax = axes[i]
         panel_summary = summary_df[summary_df["panel"] == panel_name].copy()
-
-        subgroup_order = DEFAULT_SUBGROUP_ORDER.get(panel_name, panel_summary["subgroup"].tolist())
-        panel_summary["subgroup"] = pd.Categorical(panel_summary["subgroup"], categories=subgroup_order, ordered=True)
-        panel_summary = panel_summary.sort_values("subgroup").reset_index(drop=True)
-
-        x = np.arange(len(panel_summary))
-        y = panel_summary["f1_mean"].to_numpy(dtype=float)
-        err = panel_summary["f1_std"].to_numpy(dtype=float)
-
-        color = DEFAULT_PANEL_COLORS.get(panel_name, "#5B8FF9")
-        bars = ax.bar(
-            x,
-            y,
-            yerr=err,
-            capsize=4,
-            width=0.62,
-            color=color,
-            edgecolor="black",
-            linewidth=0.8,
-            hatch="///",
-            alpha=0.95,
-        )
-
-        group_avg = float(np.mean(y))
-        ax.axhline(group_avg, linestyle="--", linewidth=1.2, color="gray", alpha=0.9)
-
-        for xi, yi in zip(x, y):
-            ax.text(xi, yi + 0.004, f"{yi:.3f}", ha="center", va="bottom", fontsize=9)
-
         panel_pairs = pairwise_df[pairwise_df["panel"] == panel_name].copy()
-        annotations = build_significance_annotations(
-            summary_df=panel_summary.assign(panel=panel_name),
-            pairwise_df=panel_pairs,
-            panel=panel_name,
-            subgroup_order=subgroup_order,
-            mean_col="f1_mean",
-            err_col="f1_std",
-            alpha=0.05,
-            start_pad=0.012,
-            step=0.028,
-            text_pad=0.004,
-            only_significant=True,
+
+        if panel_summary.empty:
+            ax.axis("off")
+            continue
+
+        _plot_single_panel(
+            ax=ax,
+            panel_name=panel_name,
+            panel_summary=panel_summary,
+            panel_pairs=panel_pairs,
+            panel_letter=panel_letters[i],
         )
-        for ann in annotations:
-            _plot_sig_bracket(ax, ann["x1"], ann["x2"], ann["y"], ann["text"])
 
-        y_top = max(np.max(y + err), group_avg) + 0.03
-        if annotations:
-            y_top = max(y_top, max(a["text_y"] for a in annotations) + 0.02)
-
-        ax.set_ylim(max(0.82, np.min(y - err) - 0.03), min(1.02, y_top))
-        ax.set_xticks(x)
-        ax.set_xticklabels(subgroup_order, rotation=0)
-        ax.set_title(panel_name, fontsize=12, pad=10)
-
-        if i in (0, 2):
-            ax.set_ylabel("F1-Score")
-        else:
-            ax.set_ylabel("")
-
-        ax.grid(axis="y", linestyle="--", alpha=0.25)
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
-        ax.text(-0.18, 1.04, panel_letters[i], transform=ax.transAxes, fontsize=12, fontweight="bold")
-
-    handles = [
-        plt.Rectangle((0, 0), 1, 1, fc="#999999", ec="black", hatch="///", label="Subgroup F1"),
-        plt.Line2D([0], [0], color="gray", lw=1.2, linestyle="--", label="Group Average"),
+    legend_handles = [
+        Patch(
+            facecolor="#C7C7C7",
+            edgecolor=EDGE_COLOR,
+            hatch="//",
+            linewidth=1.0,
+            label="Subgroup F1",
+        ),
+        Line2D(
+            [0],
+            [0],
+            color=AVG_LINE_COLOR,
+            linewidth=1.2,
+            linestyle="--",
+            label="Group Average",
+        ),
     ]
-    fig.legend(handles=handles, loc="upper center", ncol=2, frameon=False, bbox_to_anchor=(0.5, 1.01))
-    fig.suptitle(title, y=1.04, fontsize=13)
+    fig.legend(
+        handles=legend_handles,
+        loc="upper center",
+        bbox_to_anchor=(0.52, 0.995),
+        ncol=2,
+        frameon=False,
+        fontsize=10,
+        handlelength=1.8,
+        columnspacing=1.6,
+    )
 
-    plt.tight_layout()
+    plt.subplots_adjust(
+        left=0.08,
+        right=0.985,
+        bottom=0.10,
+        top=0.90,
+        wspace=0.10,
+        hspace=0.20,
+    )
+
     output_png.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(output_png, dpi=300, bbox_inches="tight")
-    plt.savefig(output_pdf, dpi=300, bbox_inches="tight")
-    plt.close()
-
+    plt.savefig(output_png, dpi=300, bbox_inches="tight", facecolor=FIG_BG)
+    plt.savefig(output_pdf, dpi=300, bbox_inches="tight", facecolor=FIG_BG)
+    plt.close(fig)
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Reproduce Figure 6 subgroup robustness plot.")
-    parser.add_argument("--input", required=True, help="Fold-level subgroup F1 CSV or directory of CSVs.")
-    parser.add_argument("--out-dir", default="outputs/figures/figure6_subgroup")
-    parser.add_argument("--title", default="Subgroup Robustness Analysis (ResNet-1D)")
+    parser = argparse.ArgumentParser(
+        description="Reproduce Figure 6 subgroup robustness plot with statistics report."
+    )
+    parser.add_argument(
+        "--input",
+        required=True,
+        help="Fold-level subgroup F1 CSV or directory of CSVs.",
+    )
+    parser.add_argument(
+        "--out-dir",
+        default="outputs/figures/figure6_subgroup",
+        help="Output directory.",
+    )
     args = parser.parse_args()
 
     raw_df = _load_fold_level_f1(args.input)
-
-    summary_df = summarize_subgroup_f1(
+    stats_bundle = analyze_all_panels(
         raw_df,
+        panel_order=DEFAULT_PANEL_ORDER,
         panel_col="panel",
         subgroup_col="subgroup",
         fold_col="fold",
         f1_col="f1",
-        panel_order=DEFAULT_PANEL_ORDER,
-        subgroup_order_map=DEFAULT_SUBGROUP_ORDER,
+        correction="bonferroni",
+        equal_var=False, 
     )
 
-    pair_tables = []
-    for panel_name in DEFAULT_PANEL_ORDER:
-        panel_df = raw_df[raw_df["panel"] == panel_name].copy()
-        if panel_df.empty:
-            continue
-        pair_tables.append(_panel_test_table(panel_df, panel_name))
-
-    pairwise_df = pd.concat(pair_tables, ignore_index=True) if pair_tables else pd.DataFrame()
+    summary_df = stats_bundle["all_summary"]
+    pairwise_df = stats_bundle["all_pairwise"]
+    global_df = stats_bundle["all_global"]
+    report_text = stats_bundle["merged_report_text"]
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     summary_csv = out_dir / "subgroup_summary.csv"
-    pvalue_csv = out_dir / "subgroup_pvalues.csv"
+    pvalue_csv = out_dir / "subgroup_pairwise.csv"
+    global_csv = out_dir / "subgroup_global_tests.csv"
+    report_txt = out_dir / "subgroup_statistical_report.txt"
+    figure_png = out_dir / "figure_subgroup_f1.png"
+    figure_pdf = out_dir / "figure_subgroup_f1.pdf"
 
     summary_df.to_csv(summary_csv, index=False)
-    if not pairwise_df.empty:
-        pairwise_df.to_csv(pvalue_csv, index=False)
-    else:
-        pd.DataFrame().to_csv(pvalue_csv, index=False)
+    pairwise_df.to_csv(pvalue_csv, index=False)
+    global_df.to_csv(global_csv, index=False)
+
+    with open(report_txt, "w", encoding="utf-8") as f:
+        f.write(report_text)
+
+    print(report_text)
 
     plot_subgroup_figure(
         summary_df=summary_df,
         pairwise_df=pairwise_df,
-        output_png=out_dir / "figure_subgroup_f1.png",
-        output_pdf=out_dir / "figure_subgroup_f1.pdf",
-        title=args.title,
+        output_png=figure_png,
+        output_pdf=figure_pdf,
     )
 
-    print(f"[OK] Figure saved to: {out_dir / 'figure_subgroup_f1.png'}")
-    print(f"[OK] Figure saved to: {out_dir / 'figure_subgroup_f1.pdf'}")
+    print(f"[OK] Figure saved to: {figure_png}")
+    print(f"[OK] Figure saved to: {figure_pdf}")
     print(f"[OK] Summary saved to: {summary_csv}")
-    print(f"[OK] P-values saved to: {pvalue_csv}")
+    print(f"[OK] Pairwise p-values saved to: {pvalue_csv}")
+    print(f"[OK] Global tests saved to: {global_csv}")
+    print(f"[OK] Text report saved to: {report_txt}")
 
 
 if __name__ == "__main__":
