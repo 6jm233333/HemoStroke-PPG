@@ -1,0 +1,110 @@
+# Reproducibility Guide
+
+This guide maps the study workflow to the repository commands. Paths are repository-relative unless otherwise noted.
+
+## Reproduction Boundary
+
+This repository supports code-path inspection, environment setup, configuration review, unit testing, and full numerical reproduction after authorized access to the required clinical datasets. Because MIMIC-III and MC-MED are credentialed clinical datasets, raw clinical records, waveforms, physician-reviewed onset anchors, derived arrays, checkpoints, and predictions are not redistributed.
+
+Without restricted local data, users can run the unit tests and inspect the pipeline. Full reproduction of the reported tables and figures requires placing the credentialed datasets under the expected local directory structure described in `docs/data_access.md`.
+
+## 1. Environment
+
+```bash
+conda env create -f environment.yml
+conda activate hemostroke-ppg
+pip install -e .
+pytest
+```
+
+## 2. Cohort Mining and Temporal Anchoring
+
+MIMIC note filtering and LLM chunk export:
+
+```bash
+python -m src.data.mimic.build_stroke_note_table --config configs/mimic_data.yaml
+python -m src.data.mimic.export_llm_chunks --config configs/mimic_data.yaml
+```
+
+Use `prompts/stroke_timestamp_extraction.md` for structured onset extraction. The paper reports physician validation of extracted onset anchors; keep those reviewed outputs under `data/interim/` and do not commit them.
+
+Anchor waveforms to reviewed timestamps:
+
+```bash
+python -m src.data.mimic.anchor_waveforms_to_notes --config configs/mimic_data.yaml
+python -m src.data.mcmed.filter_prewarning_segments --config configs/mcmed_data.yaml
+```
+
+## 3. PPG Feature Construction
+
+```bash
+python -m src.features.extract_ppg_features --dataset mimic --feature-config configs/feature_extraction.yaml --data-config configs/mimic_data.yaml
+python -m src.features.extract_ppg_features --dataset mcmed --feature-config configs/feature_extraction.yaml --data-config configs/mcmed_data.yaml
+```
+
+Clean and engineer feature tables if needed:
+
+```bash
+python -m src.features.clean_feature_table --help
+python -m src.features.engineer_features --help
+python -m src.features.select_features --help
+```
+
+The final 17-feature set is fixed in `configs/feature_set_17.json`.
+
+## 4. Temporal Labeling and Horizon Packaging
+
+The paper defines normal, warning, buffer, and lead-time regions around the documented onset anchor. Use:
+
+```bash
+python -m src.labels.relabel_time_windows --config configs/feature_extraction.yaml --dataset mimic --output-dir data/processed/mimic/features_labeled
+python -m src.labels.relabel_time_windows --config configs/feature_extraction.yaml --dataset mcmed --output-dir data/processed/mcmed/features_labeled
+```
+
+The packaged `.npy` arrays expected by `src.models.train` are:
+
+```text
+train_data.npy, train_label.npy, train_pid.npy
+val_data.npy, val_label.npy, val_pid.npy
+test_data.npy, test_label.npy, test_pid.npy
+```
+
+For external MC-MED testing, `test_*` arrays are sufficient.
+
+## 5. Main Models
+
+ResNet-1D:
+
+```bash
+python -m src.models.train --config configs/training.yaml
+python -m src.models.evaluate --config configs/training.yaml
+```
+
+LSTM baseline:
+
+```bash
+python -m src.models.train --config configs/lstm_baseline.yaml
+python -m src.models.evaluate --config configs/lstm_baseline.yaml
+```
+
+## 6. Robustness and Figure Reproduction
+
+```bash
+python -m src.models.sensitivity --help
+python scripts/qc/summarize_label_coverage.py --help
+python scripts/reproduce/figure_roc.py --help
+python scripts/reproduce/figure_shap.py --help
+python scripts/reproduce/figure_temporal_cases.py --help
+python scripts/reproduce/figure_subgroup_f1.py --help
+```
+
+Regenerated tables and figures should be written to `outputs/`. Manuscript source, compiled PDFs, and paper-ready figure files are intentionally outside the GitHub repository.
+
+## 7. Audit Checklist
+
+- Use patient-level splits only.
+- Verify no patient ID appears in more than one fold partition.
+- Keep MC-MED frozen during external testing.
+- Report window counts before metrics.
+- Report AUC and false-alert burden alongside F1/F2.
+- Keep all restricted data outside version control.

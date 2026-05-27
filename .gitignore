@@ -1,0 +1,79 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Environments
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Restricted data and generated artifacts
+data/raw/
+data/interim/
+data/processed/
+!data/README.md
+data/**/*.csv
+data/**/*.json
+
+outputs/
+!outputs/README.md
+outputs/**/*.csv
+outputs/**/*.json
+outputs/**/*.pdf
+outputs/**/*.png
+
+checkpoints/
+*.npy
+*.npz
+*.pkl
+*.pickle
+*.pt
+*.pth
+*.ckpt
+*.parquet
+
+# Common local experiment artifacts
+fold_*_best.pth
+eval_predictions.csv
+test_data.npy
+test_label.npy
+test_pid.npy
+relabel_shift_summary.csv
+manifest.json
+confusion_matrix.csv
+
+# Local logs and reports
+logs/
+wandb/
+mlruns/
+*.log
+
+# Manuscript artifacts are kept outside the source repository
+paper/
+*.tex
+*.pdf
+
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+*.toc
