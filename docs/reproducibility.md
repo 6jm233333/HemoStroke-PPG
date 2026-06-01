@@ -8,6 +8,16 @@ This repository supports code-path inspection, environment setup, configuration 
 
 Without restricted local data, users can run the unit tests and inspect the pipeline. Full reproduction of the reported tables and figures requires placing the credentialed datasets under the expected local directory structure described in `docs/data_access.md`.
 
+## Historical LLM Replay Boundary
+
+The original temporal-anchor extraction run used `gemini-3-pro-preview` between
+2025-12-22 and 2025-12-29. Google discontinued that preview endpoint on
+2026-03-09. The historical request wrapper and request-level decoding controls
+were not preserved. Exact endpoint replay is therefore not possible. See
+`configs/llm_historical_run.yaml` and `docs/llm_anchor_extraction.md` for the
+preserved schema, prompt, lifecycle record, and explicit `not_preserved`
+parameters.
+
 ## 1. Environment
 
 ```bash
@@ -28,12 +38,22 @@ python -m src.data.mimic.export_llm_chunks --config configs/mimic_data.yaml
 
 Use `prompts/stroke_timestamp_extraction.md` for structured onset extraction. The paper reports physician validation of extracted onset anchors; keep those reviewed outputs under `data/interim/` and do not commit them.
 
-Anchor waveforms to reviewed timestamps:
+Normalize MC-MED radiology text, keep reviewed outputs local, and construct the
+external Pleth segment index:
 
 ```bash
 python -m src.data.mimic.anchor_waveforms_to_notes --config configs/mimic_data.yaml
+python -m src.data.mcmed.build_llm_input --config configs/mcmed_data.yaml
+python -m src.data.mcmed.build_stroke_index --config configs/mcmed_data.yaml
 python -m src.data.mcmed.filter_prewarning_segments --config configs/mcmed_data.yaml
 ```
+
+For MC-MED, `build_llm_input` standardizes `rads.csv` fields `Study` and
+`Impression` into the canonical `Row_ID`, `CHARTTIME`, and `TEXT` extraction
+schema. `CHARTTIME` is populated from `Result_time`, while `Order_time` is
+retained locally for audit. The reviewed local anchor table and local Pleth
+waveform-segment manifest are then merged by `build_stroke_index`. See
+`docs/mcmed_anchor_generation.md`.
 
 ## 3. PPG Feature Construction
 

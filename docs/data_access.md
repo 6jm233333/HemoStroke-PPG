@@ -10,6 +10,11 @@ This repository does not redistribute clinical notes, waveform records, labels, 
 | MIMIC-III Waveform Database Matched Subset | PPG waveform source for internal development | `data/raw/mimic/waveforms/` |
 | MC-MED | External EHR/waveform cohort for frozen testing | `data/raw/mcmed/` |
 
+For MC-MED reconstruction, authorized users must place the credentialed
+`rads.csv` table under `data/raw/mcmed/` and generate a local Pleth
+waveform-segment manifest with the columns documented in
+`docs/mcmed_anchor_generation.md`.
+
 ## Expected Local Directories
 
 ```text
@@ -37,6 +42,7 @@ The following are intentionally ignored:
 - Raw clinical tables and waveforms.
 - Intermediate note chunks and LLM outputs.
 - Extracted patient-level anchors.
+- MC-MED radiology-text adapters and Pleth waveform-segment manifests.
 - Per-window feature tables.
 - `.npy` packaged datasets.
 - Model checkpoints and prediction CSVs.

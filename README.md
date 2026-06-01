@@ -9,6 +9,7 @@ This repository contains the reproducible code path for building anchor-aligned 
 Included:
 
 - Cohort mining, onset anchoring, and waveform alignment utilities.
+- MC-MED radiology-text normalization and reviewed-anchor-to-Pleth-index generation utilities.
 - PPG feature extraction, feature cleaning, relative-feature engineering, and temporal relabeling.
 - ResNet-1D main model and LSTM baseline.
 - Patient-level split checks, evaluation, SHAP, ROC, subgroup, sensitivity, and quality-control scripts.
@@ -46,6 +47,20 @@ outputs/                 Local-only generated outputs; tracked README only
 ```
 
 New work should use `src/`, `scripts/`, and `configs/`.
+
+## Historical LLM Extraction Run
+
+The original onset-anchor extraction run used the model identifier
+`gemini-3-pro-preview` between **2025-12-22** and **2025-12-29**. Google later
+discontinued that preview endpoint on **2026-03-09**. The retired endpoint
+cannot be replayed exactly.
+
+The released artifact includes the prompt, canonical input/output schema, and
+local post-processing code. The original request wrapper and request-level
+decoding controls (`temperature`, `top_p`, `top_k`, `max_output_tokens`, seed,
+and thinking configuration) were not preserved. They are therefore documented
+as `not_preserved` rather than reconstructed from current defaults. See
+`configs/llm_historical_run.yaml` and `docs/llm_anchor_extraction.md`.
 
 ## Installation
 
@@ -101,6 +116,8 @@ python -m src.data.mimic.export_llm_chunks --config configs/mimic_data.yaml
 
 # 2. After LLM extraction and physician review, anchor waveforms to onset times.
 python -m src.data.mimic.anchor_waveforms_to_notes --config configs/mimic_data.yaml
+python -m src.data.mcmed.build_llm_input --config configs/mcmed_data.yaml
+python -m src.data.mcmed.build_stroke_index --config configs/mcmed_data.yaml
 python -m src.data.mcmed.filter_prewarning_segments --config configs/mcmed_data.yaml
 
 # 3. Extract and label PPG windows.

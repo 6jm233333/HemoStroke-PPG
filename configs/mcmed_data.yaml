@@ -6,6 +6,7 @@ paths:
   processed_root: data/processed/mcmed
 
   visits_csv: data/raw/mcmed/visits.csv
+  rads_csv: data/raw/mcmed/rads.csv
   waveform_summary_csv: data/raw/mcmed/waveform_summary.csv
   waveforms_root: data/raw/mcmed/waveforms
 
@@ -17,6 +18,9 @@ paths:
   split_chrono_val_csv: data/raw/mcmed/split_chrono_val.csv
   split_chrono_test_csv: data/raw/mcmed/split_chrono_test.csv
 
+  llm_input_csv: data/interim/mcmed/llm_input_radiology.csv
+  reviewed_anchor_csv: data/interim/mcmed/reviewed_anchor_candidates.csv
+  pleth_segment_manifest_csv: data/interim/mcmed/pleth_waveform_segments.csv
   stroke_index_csv: data/interim/mcmed/stroke_index_raw.csv
   filtered_index_csv: data/processed/mcmed/stroke_index_filtered.csv
 
@@ -38,6 +42,17 @@ time_columns:
 waveform_columns:
   waveform_path: WAVE_PATH
   waveform_type: Wave_Type
+
+anchor_generation:
+  radiology_row_id: Row_ID
+  radiology_text_fields:
+    - Study
+    - Impression
+  canonical_note_timestamp: Result_time
+  retained_audit_timestamp: Order_time
+  reviewed_anchor_time: Extracted_Timestamp
+  require_unique_reviewed_anchor_per_visit: true
+  pleth_value: Pleth
 
 segment_filter:
   warning_hours: 6

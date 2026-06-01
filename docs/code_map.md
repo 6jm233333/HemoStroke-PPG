@@ -4,8 +4,9 @@ This file maps the study workflow to maintained public code. The entry points be
 
 | Study stage | Maintained public code |
 |---|---|
-| Note screening and timestamp extraction | `src/data/mimic/*`, `prompts/stroke_timestamp_extraction.md` |
-| Waveform anchoring | `src/data/mimic/anchor_waveforms_to_notes.py`, `src/data/mcmed/filter_prewarning_segments.py` |
+| Note screening and timestamp extraction | `src/data/mimic/*`, `src/data/mcmed/build_llm_input.py`, `prompts/stroke_timestamp_extraction.md` |
+| Historical LLM-run disclosure | `configs/llm_historical_run.yaml`, `docs/llm_anchor_extraction.md` |
+| Waveform anchoring | `src/data/mimic/anchor_waveforms_to_notes.py`, `src/data/mcmed/build_stroke_index.py`, `src/data/mcmed/filter_prewarning_segments.py` |
 | PPG feature extraction | `src/features/extract_ppg_features.py` |
 | Feature cleaning and engineering | `src/features/clean_feature_table.py`, `src/features/engineer_features.py`, `src/features/select_features.py` |
 | Temporal labeling | `src/labels/relabel_time_windows.py` |
