@@ -91,7 +91,7 @@ def summarize_false_alerts(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Generate one Table IV false-alert row from high-risk non-stroke prediction windows."
+        description="Generate one Table IV false-alert row from high-risk non-stroke control windows."
     )
     parser.add_argument("--predictions", required=True, help="CSV with one row per packaged control window.")
     parser.add_argument("--output-csv", required=True)
