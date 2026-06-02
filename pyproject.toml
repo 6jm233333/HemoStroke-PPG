@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "hemostroke-ppg"
 version = "0.1.0"
-description = "In-hospital stroke prediction from PPG-derived hemodynamic features."
+description = "In-hospital stroke risk-state classification from PPG-derived hemodynamic features."
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
