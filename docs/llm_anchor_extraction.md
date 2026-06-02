@@ -11,7 +11,7 @@ model identifier to `gemini-3.1-pro-preview`.
 Official lifecycle source:
 <https://ai.google.dev/gemini-api/docs/changelog>
 
-## Preserved Artifact Components
+## Preserved Components
 
 - Version-controlled prompt: `prompts/stroke_timestamp_extraction.md`
 - Canonical input fields: `Row_ID`, `CHARTTIME`, `TEXT`

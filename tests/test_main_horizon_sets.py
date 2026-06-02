@@ -56,3 +56,28 @@ def test_patient_split_map_is_disjoint_and_deterministic():
     assert split_a == split_b
     assert set(split_a) == set(patient_ids)
     assert {"train", "val", "test"} == set(split_a.values())
+
+
+def test_main_packaging_prefers_subject_id_over_waveform_group_id():
+    df = pd.DataFrame(
+        {
+            "SUBJECT_ID": ["patient-1"] * 500,
+            "Group_ID": ["waveform-group-1"] * 500,
+            "Source_File": ["wave-1"] * 500,
+            "Time_Rel_Min": np.linspace(-220, -20, 500),
+            "feature": np.arange(500, dtype=float),
+        }
+    )
+    _, _, patient_ids, _, _, _ = build_windows_for_dataframe(
+        df,
+        fallback_file_id="unused",
+        feature_cols=["feature"],
+        horizon_minutes=240,
+        normal_start_minutes=-480,
+        boundary_buffer_minutes=15,
+        onset_buffer_minutes=15,
+        window_size=500,
+        stride=500,
+        max_gap_minutes=1.0,
+    )
+    assert patient_ids == ["patient-1"]

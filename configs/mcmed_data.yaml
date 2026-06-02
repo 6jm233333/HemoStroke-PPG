@@ -49,7 +49,7 @@ anchor_generation:
     - Study
     - Impression
   canonical_note_timestamp: Result_time
-  retained_audit_timestamp: Order_time
+  retained_source_timestamp: Order_time
   reviewed_anchor_time: Extracted_Timestamp
   require_unique_reviewed_anchor_per_visit: true
   pleth_value: Pleth

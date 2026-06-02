@@ -1,4 +1,4 @@
-# Local Data Placeholder
+# Local Data Directory
 
 This directory is a local-only mount point for credentialed clinical data. Do not commit raw records, waveform files, intermediate tables, processed arrays, checkpoints, predictions, or patient-level files.
 

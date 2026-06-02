@@ -32,7 +32,7 @@ def summarize_false_alerts(
     *,
     identifier_col: str,
     score_col: str,
-    order_col: str | None,
+    order_col: str,
     threshold: float,
     min_consecutive_windows: int,
     n_packaged: int | None = None,
@@ -43,9 +43,7 @@ def summarize_false_alerts(
 ) -> pd.DataFrame:
     if min_consecutive_windows < 1:
         raise ValueError("min_consecutive_windows must be at least 1.")
-    required = [identifier_col, score_col]
-    if order_col is not None:
-        required.append(order_col)
+    required = [identifier_col, score_col, order_col]
     missing = [col for col in required if col not in predictions.columns]
     if missing:
         raise ValueError(f"Missing prediction columns: {missing}")
@@ -57,8 +55,7 @@ def summarize_false_alerts(
     if work.empty:
         raise ValueError("No NaN-free inference windows remain.")
 
-    if order_col is not None:
-        work = work.sort_values([identifier_col, order_col], kind="mergesort")
+    work = work.sort_values([identifier_col, order_col], kind="mergesort")
     work["_positive"] = apply_binary_threshold(work[score_col].to_numpy(), threshold)
 
     id_rows: list[dict[str, Any]] = []
@@ -96,10 +93,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--predictions", required=True, help="CSV with one row per packaged control window.")
     parser.add_argument("--output-csv", required=True)
     parser.add_argument("--config", default="configs/training.yaml")
-    parser.add_argument("--identifier-col", default="pid")
+    parser.add_argument("--identifier-col", default="file_id", help="File-level packaging-group column.")
     parser.add_argument("--score-col", default="y_prob")
-    parser.add_argument("--order-col", default=None, help="Optional within-identifier window ordering column.")
-    parser.add_argument("--threshold", type=float, default=None, help="Optional audited override; default reads config.")
+    parser.add_argument("--order-col", required=True, help="Within-identifier window ordering column.")
+    parser.add_argument("--threshold", type=float, default=None, help="Optional explicit override; default reads config.")
     parser.add_argument("--min-consecutive-windows", type=int, default=5)
     parser.add_argument("--n-packaged", type=int, default=None, help="Optional pre-NaN-filter window count.")
     parser.add_argument("--cohort", default=None)

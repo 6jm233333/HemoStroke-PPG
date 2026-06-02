@@ -11,7 +11,7 @@ import pandas as pd
 import yaml
 
 
-PATIENT_COL_CANDIDATES = ["Group_ID", "SUBJECT_ID", "CSN", "MRN", "Visit_no"]
+PATIENT_COL_CANDIDATES = ["SUBJECT_ID", "MRN", "CSN", "Group_ID", "Visit_no"]
 FILE_COL_CANDIDATES = ["Source_File", "WAVE_PATH", "Wave_Path", "wave_path"]
 TIME_COL_CANDIDATES = ["Absolute_Time", "Beat_Idx", "Time_Rel_Min"]
 EXCLUDE_NAMES = {

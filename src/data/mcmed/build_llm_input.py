@@ -50,13 +50,13 @@ def build_canonical_llm_input(
     *,
     visit_id_col: str,
     timestamp_col: str,
-    audit_timestamp_col: str,
+    source_timestamp_col: str,
     text_fields: list[str],
     row_id_col: str,
 ) -> pd.DataFrame:
     validate_required_columns(
         rads_df,
-        [visit_id_col, timestamp_col, audit_timestamp_col, *text_fields],
+        [visit_id_col, timestamp_col, source_timestamp_col, *text_fields],
     )
 
     out = rads_df.copy()
@@ -73,7 +73,7 @@ def build_canonical_llm_input(
         visit_id_col,
         "CHARTTIME",
         "TEXT",
-        audit_timestamp_col,
+        source_timestamp_col,
         timestamp_col,
         *text_fields,
     ]
@@ -97,7 +97,12 @@ def main() -> None:
     output_csv = paths["llm_input_csv"]
     row_id_col = str(anchor_cfg.get("radiology_row_id", "Row_ID"))
     timestamp_col = str(anchor_cfg.get("canonical_note_timestamp", "Result_time"))
-    audit_timestamp_col = str(anchor_cfg.get("retained_audit_timestamp", "Order_time"))
+    source_timestamp_col = str(
+        anchor_cfg.get(
+            "retained_source_timestamp",
+            anchor_cfg.get("retained_audit_timestamp", "Order_time"),
+        )
+    )
     text_fields = list(anchor_cfg.get("radiology_text_fields", ["Study", "Impression"]))
 
     print(f"[build_llm_input] reading: {rads_csv}")
@@ -106,7 +111,7 @@ def main() -> None:
         rads_df,
         visit_id_col=visit_id_col,
         timestamp_col=timestamp_col,
-        audit_timestamp_col=audit_timestamp_col,
+        source_timestamp_col=source_timestamp_col,
         text_fields=text_fields,
         row_id_col=row_id_col,
     )
@@ -126,7 +131,7 @@ def main() -> None:
                 "canonical_fields": ["Row_ID", "CHARTTIME", "TEXT"],
                 "text_fields": text_fields,
                 "canonical_note_timestamp": timestamp_col,
-                "retained_audit_timestamp": audit_timestamp_col,
+                "retained_source_timestamp": source_timestamp_col,
             },
             f,
             ensure_ascii=False,

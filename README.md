@@ -126,8 +126,8 @@ python -m src.features.extract_ppg_features --dataset mimic --feature-config con
 python -m src.features.extract_ppg_features --dataset mcmed --feature-config configs/feature_extraction.yaml --data-config configs/mcmed_data.yaml
 python -m src.features.clean_feature_table --input-dir data/processed/mimic/features_raw --output-dir data/processed/mimic/features_cleaned
 python -m src.features.clean_feature_table --input-dir data/processed/mcmed/features_raw --output-dir data/processed/mcmed/features_cleaned
-python -m src.features.engineer_features --input-dir data/processed/mimic/features_cleaned --output-dir data/processed/mimic/features_engineered
-python -m src.features.engineer_features --input-dir data/processed/mcmed/features_cleaned --output-dir data/processed/mcmed/features_engineered
+python -m src.features.engineer_features --input-dir data/processed/mimic/features_cleaned --output-dir data/processed/mimic/features_engineered --baseline-method mean --baseline-frac 0.10 --baseline-min-rows 5
+python -m src.features.engineer_features --input-dir data/processed/mcmed/features_cleaned --output-dir data/processed/mcmed/features_engineered --baseline-method mean --baseline-frac 0.10 --baseline-min-rows 5
 python -m src.labels.relabel_time_windows --config configs/feature_extraction.yaml --dataset mimic --output-dir data/processed/mimic/features_labeled
 python -m src.labels.relabel_time_windows --config configs/feature_extraction.yaml --dataset mcmed --output-dir data/processed/mcmed/features_labeled
 
@@ -145,6 +145,9 @@ MIMIC-defined preprocessing rule is applied unchanged to MC-MED. Main evaluation
 uses the `evaluation.threshold` operating point selected on MIMIC validation and
 applies it unchanged to internal reporting, frozen MC-MED evaluation, and
 false-alert analysis.
+
+The main array builder prefers true patient identifiers (`SUBJECT_ID` for
+MIMIC-III and `MRN` for MC-MED) over waveform- or encounter-level fallbacks.
 
 Baseline:
 
@@ -169,7 +172,7 @@ See `docs/reproducibility.md` for the staged checklist.
 
 ## Citation
 
-Citation information will be added after acceptance or publication. For now, use `CITATION.cff` for repository-level metadata.
+Use `CITATION.cff` for repository-level citation metadata.
 
 ## Clinical Disclaimer
 

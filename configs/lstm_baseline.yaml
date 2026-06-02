@@ -84,7 +84,8 @@ training:
   early_stopping_patience: 15
   optimizer: adam
   scheduler: reduce_on_plateau
-  monitor_metric: val_f1
+  monitor_metric: macro_f1
+  positive_class_weight: 3.0
   save_best_only: true
 
 evaluation:

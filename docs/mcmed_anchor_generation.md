@@ -17,7 +17,7 @@ timestamp-fallback rules, but their source fields differ.
 | MIMIC-III | `NOTEEVENTS.TEXT` | `NOTEEVENTS.CHARTTIME` | PPG / Pleth |
 | MC-MED | `rads.csv`: `Study + Impression` | `rads.csv`: `Result_time` | PPG / Pleth |
 
-For MC-MED, `Order_time` is retained locally for audit. The adapter writes the
+For MC-MED, `Order_time` is retained locally for provenance checks. The adapter writes the
 canonical fields `Row_ID`, `CHARTTIME`, and `TEXT`, which match the released
 prompt. The generated table remains local because it contains restricted text.
 

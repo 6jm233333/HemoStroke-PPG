@@ -51,7 +51,7 @@ python -m src.data.mcmed.filter_prewarning_segments --config configs/mcmed_data.
 For MC-MED, `build_llm_input` standardizes `rads.csv` fields `Study` and
 `Impression` into the canonical `Row_ID`, `CHARTTIME`, and `TEXT` extraction
 schema. `CHARTTIME` is populated from `Result_time`, while `Order_time` is
-retained locally for audit. The reviewed local anchor table and local Pleth
+retained locally for provenance checks. The reviewed local anchor table and local Pleth
 waveform-segment manifest are then merged by `build_stroke_index`. See
 `docs/mcmed_anchor_generation.md`.
 
@@ -67,8 +67,8 @@ Clean and engineer feature tables if needed:
 ```bash
 python -m src.features.clean_feature_table --input-dir data/processed/mimic/features_raw --output-dir data/processed/mimic/features_cleaned
 python -m src.features.clean_feature_table --input-dir data/processed/mcmed/features_raw --output-dir data/processed/mcmed/features_cleaned
-python -m src.features.engineer_features --input-dir data/processed/mimic/features_cleaned --output-dir data/processed/mimic/features_engineered
-python -m src.features.engineer_features --input-dir data/processed/mcmed/features_cleaned --output-dir data/processed/mcmed/features_engineered
+python -m src.features.engineer_features --input-dir data/processed/mimic/features_cleaned --output-dir data/processed/mimic/features_engineered --baseline-method mean --baseline-frac 0.10 --baseline-min-rows 5
+python -m src.features.engineer_features --input-dir data/processed/mcmed/features_cleaned --output-dir data/processed/mcmed/features_engineered --baseline-method mean --baseline-frac 0.10 --baseline-min-rows 5
 python -m src.features.select_features --help
 ```
 
@@ -76,6 +76,11 @@ The final 17-feature set is fixed in `configs/feature_set_17.json`. Relative
 features use the frozen paper-aligned rule `(x - mu_base) / abs(mu_base)`, where
 `mu_base` is the mean over the initial stable period. The same MIMIC-defined
 preprocessing rule is reused unchanged on MC-MED.
+
+Waveform filtering parameters and the minimum beat count are read from
+`configs/feature_extraction.yaml`. Relabeling preserves extracted beat-level
+`Absolute_Time` values and reconstructs a time axis only for legacy tables that
+do not contain usable beat timestamps.
 
 ## 4. Temporal Labeling and Horizon Packaging
 
@@ -104,7 +109,9 @@ python -m src.datasets.build_main_horizon_sets --config configs/feature_extracti
 
 This writes patient-disjoint MIMIC `train_*`, `val_*`, and `test_*` arrays and
 MC-MED `test_*` arrays under the configured `240min`, `300min`, and `360min`
-folders.
+folders. Patient identifiers are resolved from `SUBJECT_ID` for MIMIC-III and
+`MRN` for MC-MED when available; encounter and waveform identifiers are legacy
+fallbacks only.
 
 ## 5. Main Models
 
@@ -138,10 +145,10 @@ Regenerated tables and figures should be written to `outputs/`. Manuscript sourc
 
 ## 7. Frozen Operating Threshold and False-Alert Burden
 
-`configs/training.yaml` records the operating threshold selected on MIMIC
-validation. `src.models.train` and `src.models.evaluate` apply this threshold
-unchanged to internal reporting and frozen MC-MED testing. They do not use
-`argmax` as an implicit 0.5 operating point.
+The released model configs record the operating threshold selected on MIMIC
+validation. `src.models.train` and `src.models.evaluate` apply the configured
+threshold unchanged to internal reporting and frozen MC-MED testing. They do
+not use `argmax` as an implicit 0.5 operating point.
 
 For each high-risk non-stroke cohort and horizon, generate the Table IV row from
 window-level prediction scores:
@@ -150,18 +157,20 @@ window-level prediction scores:
 python scripts/reproduce/table4_false_alert_burden.py \
   --predictions outputs/controls/mimic_240min_predictions.csv \
   --output-csv outputs/controls/mimic_240min_false_alert.csv \
-  --identifier-col pid \
+  --identifier-col file_id \
   --order-col window_index \
   --cohort MIMIC-III \
   --horizon-minutes 240 \
   --stroke-tpr 0.9833
 ```
 
-The script reads the frozen threshold from `configs/training.yaml`, reports
-packaged and NaN-free window counts, and computes `ID+` as the fraction of
-file-level identifiers with at least five consecutive positive windows.
+The input CSV must retain a file-level packaging-group column and an explicit
+within-file window-order column. The script reads the frozen threshold from
+`configs/training.yaml`, reports packaged and NaN-free window counts, and
+computes `ID+` as the fraction of file-level identifiers with at least five
+consecutive positive windows.
 
-## 8. Audit Checklist
+## 8. Reproduction Checks
 
 - Use patient-level splits only.
 - Verify no patient ID appears in more than one fold partition.

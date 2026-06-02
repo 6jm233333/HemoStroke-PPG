@@ -16,7 +16,7 @@ Dataset-specific local adapters populate this canonical schema. For MIMIC-III,
 `TEXT` is derived from `NOTEEVENTS.TEXT` and `CHARTTIME` from
 `NOTEEVENTS.CHARTTIME`. For MC-MED, `TEXT` is the local concatenation of
 `rads.csv` fields `Study` and `Impression`, and `CHARTTIME` is populated from
-`Result_time`; `Order_time` is retained locally for audit. Restricted source
+`Result_time`; `Order_time` is retained locally for provenance checks. Restricted source
 text and generated payloads must not be committed.
 
 ## Task

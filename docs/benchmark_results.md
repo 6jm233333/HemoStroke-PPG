@@ -50,5 +50,5 @@ threshold selected on MIMIC validation.
 
 - Relative-feature ablation did not collapse performance, indicating that performance is not driven only by baseline normalization.
 - Onset-anchor perturbation at +/-15, +/-30, and +/-60 minutes preserved non-trivial internal performance.
-- Signal-quality audit reported MIMIC-III SQI 0.87 [0.79--0.93] and MC-MED SQI 0.93 [0.86--0.96].
+- Signal-quality analysis reported MIMIC-III SQI 0.87 [0.79--0.93] and MC-MED SQI 0.93 [0.86--0.96].
 - SHAP and trajectory analyses highlighted systolic timing and amplitude-related morphology, especially `T_sp_Rel`, `T_sp`, and `A_sp_Rel`.

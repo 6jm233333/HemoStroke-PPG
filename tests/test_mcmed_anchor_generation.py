@@ -22,7 +22,7 @@ def test_build_canonical_llm_input_uses_radiology_adapter():
         rads,
         visit_id_col="CSN",
         timestamp_col="Result_time",
-        audit_timestamp_col="Order_time",
+        source_timestamp_col="Order_time",
         text_fields=["Study", "Impression"],
         row_id_col="Row_ID",
     )

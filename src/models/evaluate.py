@@ -975,7 +975,7 @@ def run_single_horizon_eval(
 # =============================================================================
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Evaluate saved ResNet-1D checkpoints.")
+    parser = argparse.ArgumentParser(description="Evaluate saved checkpoints for the configured classifier.")
     parser.add_argument(
         "--config",
         type=str,

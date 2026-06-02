@@ -105,6 +105,8 @@ def resolve_dataset_spec(
 
     if dataset == "mimic":
         index_table_path = paths["feature_index_csv"]
+        subject_id_col = data_cfg["id_columns"].get("subject_id")
+        visit_id_col = data_cfg["id_columns"].get("hadm_id")
         return DatasetSpec(
             dataset_name="mimic",
             index_table_path=index_table_path,
@@ -112,9 +114,11 @@ def resolve_dataset_spec(
             wave_start_col=time_cols["waveform_start"],
             extracted_stroke_time_col=time_cols["extracted_stroke_time"],
             grouping_mode="mimic_group_from_path",
-            visit_id_col=data_cfg["id_columns"].get("hadm_id"),
+            visit_id_col=visit_id_col,
             waveform_type_col=None,
-            passthrough_cols=[],
+            passthrough_cols=[
+                col for col in [subject_id_col, visit_id_col] if col is not None
+            ],
         )
 
     if dataset == "mcmed":
@@ -166,13 +170,18 @@ def choose_group_stroke_time(group_df: pd.DataFrame, stroke_col: str, dataset: s
     return min(times)
 
 
-def extract_features_optimized(ppg: np.ndarray, fp_df: pd.DataFrame, fs: float) -> pd.DataFrame:
-    if len(fp_df) < 3:
+def extract_features_optimized(
+    ppg: np.ndarray,
+    fp_df: pd.DataFrame,
+    fs: float,
+    min_beats: int = 3,
+) -> pd.DataFrame:
+    if len(fp_df) < min_beats:
         return pd.DataFrame()
 
     valid_mask = fp_df["on"].notna() & fp_df["off"].notna() & fp_df["sp"].notna()
     df = fp_df[valid_mask].copy()
-    if len(df) < 3:
+    if len(df) < min_beats:
         return pd.DataFrame()
 
     on = df["on"].values.astype(int)
@@ -237,6 +246,8 @@ def process_chunk(
     fs: float,
     start_offset_idx: int,
     correction_flags: dict[str, bool],
+    preprocessing_cfg: dict[str, Any],
+    min_beats: int,
 ) -> pd.DataFrame | None:
     try:
         if len(raw_chunk) < 1000:
@@ -245,13 +256,19 @@ def process_chunk(
         s = DotMap()
         s.v = raw_chunk
         s.fs = fs
-        s.filtering = True
+        s.filtering = bool(preprocessing_cfg.get("filtering", True))
 
+        smoothing_cfg = preprocessing_cfg.get("smoothing_windows", {})
         preprocessor = Preprocess(
-            fL=0.5,
-            fH=5.0,
-            order=4,
-            sm_wins={"ppg": 50, "vpg": 10, "apg": 10, "jpg": 10},
+            fL=float(preprocessing_cfg.get("lowcut_hz", 0.5)),
+            fH=float(preprocessing_cfg.get("highcut_hz", 5.0)),
+            order=int(preprocessing_cfg.get("filter_order", 4)),
+            sm_wins={
+                "ppg": int(smoothing_cfg.get("ppg", 50)),
+                "vpg": int(smoothing_cfg.get("vpg", 10)),
+                "apg": int(smoothing_cfg.get("apg", 10)),
+                "jpg": int(smoothing_cfg.get("jpg", 10)),
+            },
         )
         ppg, vpg, apg, jpg = preprocessor.get_signals(s)
 
@@ -267,10 +284,10 @@ def process_chunk(
         corr.correction = pd.DataFrame({k: [v] for k, v in correction_flags.items()})
         fp_df = fp_coll.get_fiducials(corr)
 
-        if len(fp_df) < 3:
+        if len(fp_df) < min_beats:
             return None
 
-        features = extract_features_optimized(ppg, fp_df, fs)
+        features = extract_features_optimized(ppg, fp_df, fs, min_beats=min_beats)
         if features.empty:
             return None
 
@@ -351,7 +368,9 @@ def process_group(
         fx = feature_cfg["feature_extraction"]
         chunk_minutes = int(fx.get("chunk_minutes", 30))
         min_signal_length = int(fx.get("min_signal_length", 5000))
+        min_beats = max(1, int(fx.get("min_beats", 3)))
         target_signal = str(fx.get("target_signal", "PLETH")).upper()
+        preprocessing_cfg = fx.get("preprocessing", {})
 
         provisional = feature_cfg.get("provisional_labeling", {})
         warning_start = float(provisional.get("warning_start_min", -120))
@@ -419,6 +438,8 @@ def process_group(
                     fs=fs,
                     start_offset_idx=start_idx,
                     correction_flags=correction_flags,
+                    preprocessing_cfg=preprocessing_cfg,
+                    min_beats=min_beats,
                 )
                 if chunk_feats is not None:
                     feats_list.append(chunk_feats)
@@ -477,7 +498,13 @@ def process_group(
             if spec.passthrough_cols:
                 for col in spec.passthrough_cols:
                     if col in group_df.columns and col not in features.columns:
-                        features[col] = row.get(col)
+                        values = group_df[col].dropna().unique()
+                        if len(values) > 1:
+                            raise ValueError(
+                                f"Group {group_key} contains multiple values for {col}: "
+                                f"{values.tolist()}"
+                            )
+                        features[col] = values[0] if len(values) == 1 else np.nan
 
             if "On_Sample_Index" in features.columns:
                 del features["On_Sample_Index"]

@@ -218,6 +218,7 @@ def candidate_output_order(df: pd.DataFrame) -> list[str]:
 def rebuild_group_time_axis(
     g: pd.DataFrame,
     beat_col: str | None,
+    abs_time_col: str | None,
     wave_start_col: str,
     wave_end_col: str,
     stroke_col: str,
@@ -243,7 +244,15 @@ def rebuild_group_time_axis(
     if n == 0:
         return None
 
-    if n == 1:
+    existing_abs_times = None
+    if abs_time_col is not None and abs_time_col in g.columns:
+        parsed_abs_times = pd.to_datetime(g[abs_time_col], errors="coerce")
+        if parsed_abs_times.notna().all():
+            existing_abs_times = parsed_abs_times
+
+    if existing_abs_times is not None:
+        abs_times = existing_abs_times
+    elif n == 1:
         abs_times = pd.Index([t_start])
     else:
         if t_end <= t_start:
@@ -283,6 +292,7 @@ def process_one_file(
     wave_start_col = first_existing(df.columns, schema.wave_start_col_candidates)
     wave_end_col = first_existing(df.columns, schema.wave_end_col_candidates)
     stroke_col = first_existing(df.columns, schema.stroke_time_col_candidates)
+    abs_time_col = first_existing(df.columns, schema.abs_time_col_candidates)
     stroke_subject_col = first_existing(df.columns, schema.stroke_subject_col_candidates)
 
     required_map = {
@@ -313,6 +323,7 @@ def process_one_file(
         rebuilt = rebuild_group_time_axis(
             g=g,
             beat_col=beat_col,
+            abs_time_col=abs_time_col,
             wave_start_col=wave_start_col,
             wave_end_col=wave_end_col,
             stroke_col=stroke_col,
@@ -358,7 +369,7 @@ def resolve_default_input_dir(dataset: str, feature_cfg: dict[str, Any]) -> str 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Rebuild Absolute_Time / Time_Rel_Min / Label from extracted beat-level feature tables."
+        description="Assign Time_Rel_Min and Label while preserving available beat-level timestamps."
     )
     parser.add_argument("--config", type=str, required=True, help="Path to configs/feature_extraction.yaml")
     parser.add_argument("--dataset", type=str, required=True, choices=["mimic", "mcmed"])
