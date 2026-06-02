@@ -4,10 +4,10 @@ These benchmark values are the study-level reference results associated with thi
 
 ## Cohorts
 
-| Cohort | Source population | Stroke subset with eligible pre-onset PPG |
+| Cohort | Source population (patients) | Stroke subset with eligible pre-anchor PPG (patients) |
 |---|---:|---:|
 | MIMIC-III | 38,548 | 176 |
-| MC-MED | 118,385 | 158 |
+| MC-MED | 70,545 | 154 |
 
 ## Effective Window-Level Units
 
