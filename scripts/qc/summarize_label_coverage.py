@@ -21,7 +21,7 @@ Why this is useful
 ------------------
 - Early-stage tables in this project may contain labels {-1, 0, 1, 2}.
 - Final relabeled training tables usually contain {-1, 0, 1}.
-- Reviewers often ask for total sample counts and class imbalance details.
+- Total sample counts and class imbalance details support transparent reporting.
 - This script gives a transparent QC trace without modifying data.
 
 Example
