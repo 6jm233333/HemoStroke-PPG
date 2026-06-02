@@ -77,7 +77,7 @@ class TrainConfig:
     drop_ignore_label: bool = True
 
     monitor_metric: str = "macro_f1"  # paper-aligned
-    positive_class_weight: float = 3.0  # λ_pos = 3.0 in the paper
+    positive_class_weight: float = 3.0  # 位_pos = 3.0 in the paper
 
     sampling_enabled: bool = True
     sampling_mode: str = "weighted_sampler"   # weighted_sampler / none
@@ -1276,7 +1276,7 @@ def summarize_across_horizons(results: List[Dict[str, Any]], output_root: Path) 
 # =============================================================================
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train ResNet-1D for stroke early warning.")
+    parser = argparse.ArgumentParser(description="Train ResNet-1D for pre-anchor stroke risk-state classification.")
     parser.add_argument(
         "--config",
         type=str,
