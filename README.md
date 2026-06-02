@@ -1,8 +1,8 @@
 # HemoStroke-PPG
 
-Accompanying artifact/code repository for **In-Hospital Stroke Prediction from PPG-Derived Hemodynamic Features**.
+Code repository for **In-Hospital Stroke Risk-State Classification from PPG-Derived Hemodynamic Features**.
 
-This repository contains the reproducible code path for building anchor-aligned photoplethysmography (PPG) hemodynamic features and training stroke-warning models across MIMIC-III and MC-MED cohorts. It is a source-code repository, not a manuscript archive: paper source, compiled PDFs, and paper-ready figure files are intentionally kept outside version control.
+This repository contains the reproducible code path for building anchor-aligned photoplethysmography (PPG) hemodynamic features and training pre-anchor stroke risk-state classification models across MIMIC-III and MC-MED cohorts. It is a source-code repository, not a manuscript archive: paper source, compiled PDFs, and paper-ready figure files are intentionally kept outside version control.
 
 ## Scope
 
@@ -38,7 +38,7 @@ Full benchmark tables are in `docs/benchmark_results.md`. The 17-feature definit
 ```text
 configs/                 Experiment and path configuration
 data/                    Local-only data mount point; tracked README only
-docs/                    Data access, reproducibility, results, and artifact notes 
+docs/                    Data access, reproducibility, results, and supporting notes
 prompts/                 LLM onset timestamp extraction prompt
 scripts/qc/              Quality-control utilities
 scripts/reproduce/       Table and figure reproduction entry points
@@ -56,7 +56,7 @@ The original onset-anchor extraction run used the model identifier
 discontinued that preview endpoint on **2026-03-09**. The retired endpoint
 cannot be replayed exactly.
 
-The released artifact includes the prompt, canonical input/output schema, and
+The repository includes the prompt, canonical input/output schema, and
 local post-processing code. The original request wrapper and request-level
 decoding controls (`temperature`, `top_p`, `top_k`, `max_output_tokens`, seed,
 and thinking configuration) were not preserved. They are therefore documented
