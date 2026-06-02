@@ -13,7 +13,7 @@ These benchmark values are the study-level reference results associated with thi
 
 | Horizon | MIMIC train total/normal/warn | MIMIC val total/normal/warn | MIMIC held-out total/normal/warn | MC-MED total/normal/warn |
 |---:|---:|---:|---:|---:|
-| 240 min | 20,162 / 6,862 / 13,300 | 2,746 / 891 / 1,855 | 7,205 / 2,420 / 4,785 |  737 / 232 / 505 |
+| 240 min | 20,162 / 6,862 / 13,300 | 2,746 / 891 / 1,855 | 7,205 / 2,420 / 4,785 | 737 / 232 / 505 |
 | 300 min | 20,306 / 4,433 / 15,873 | 2,778 / 599 / 2,179 | 7,252 / 1,521 / 5,731 | 748 / 173 / 575 |
 | 360 min | 20,510 / 2,349 / 18,161 | 2,778 / 309 / 2,469 | 7,320 / 747 / 6,573 | 752 / 118 / 634 |
 
