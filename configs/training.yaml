@@ -61,6 +61,12 @@ sampling:
   target_pos_neg_ratio: 1.0
   apply_to_train_only: true
 
+feature_engineering:
+  # Frozen from the MIMIC development pipeline and reused unchanged on MC-MED.
+  baseline_method: mean
+  baseline_fraction: 0.10
+  min_baseline_points: 5
+
 model:
   name: resnet1d
   input_channels: 17
@@ -80,6 +86,7 @@ training:
   save_best_only: true
 
 evaluation:
+  # Frozen operating point selected on MIMIC validation only.
   threshold: 0.7910
   metrics:
     - accuracy

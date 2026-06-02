@@ -15,8 +15,11 @@ The repository is now suitable for code-path inspection, environment setup, conf
 - `docs/feature_dictionary.md`: renamed the feature dictionary to the expected public documentation path and replaced non-ASCII formula notation with ASCII-safe notation.
 - `configs/feature_extraction.yaml`: aligned the default 240-minute label boundaries with the tested buffer and lead-time semantics.
 - `src/models/train.py`: changed frozen MC-MED external testing to use fold-trained checkpoints by default rather than a full-internal retrain path.
+- `src/datasets/build_main_horizon_sets.py`: added the standard entry point for paper-aligned MIMIC train/validation/test and frozen MC-MED test arrays.
+- `src/models/train.py` and `src/models/evaluate.py`: apply the MIMIC-validation operating threshold instead of implicit `argmax`.
+- `scripts/reproduce/table4_false_alert_burden.py`: added the Table IV false-alert burden entry point with the documented `ID+` rule.
 - `src/analysis/subgroup_statistics.py`: removed star-style significance labels and changed them to p-value labels for optional reports.
-- `src/datasets/build_subgroup_sets.py`: translated public comments to English and restored comment-split preprocessing statements as executable code.
+- `src/datasets/build_subgroup_sets.py`: removed the independent per-file transform so subgroup packaging consumes values from the same frozen upstream feature pipeline.
 - `src/features/extract_ppg_features.py`: replaced a non-English compatibility column literal with an ASCII Unicode-escape constant.
 - `docs/artifact_audit_report.md`: added this audit report.
 
@@ -46,7 +49,7 @@ The repository is now suitable for code-path inspection, environment setup, conf
 ## Commands Run
 
 - `python -m compileall src scripts tests`: passed.
-- `pytest`: passed with 5 tests passed and 2 skipped.
+- `pytest`: passed with 17 tests passed and 2 Torch-dependent tests skipped because Torch was unavailable in the audit environment.
 - `git status --short`: not run successfully because `git` is not installed in the current shell environment.
 - `rg` equivalent searches for stale project/venue wording, old folder references, figure-number conflicts, retrain defaults, and local drive-root patterns: passed after the fixes above.
 - File-system inspection of `data/` and `outputs/`: passed; only README placeholders are present.

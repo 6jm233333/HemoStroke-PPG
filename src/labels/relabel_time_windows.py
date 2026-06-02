@@ -349,6 +349,9 @@ def process_one_file(
 
 def resolve_default_input_dir(dataset: str, feature_cfg: dict[str, Any]) -> str | None:
     paths = feature_cfg.get("paths", {})
+    engineered_roots = paths.get("engineered_feature_root", {})
+    if dataset in engineered_roots:
+        return engineered_roots[dataset]
     feature_roots = paths.get("raw_feature_root", {})
     return feature_roots.get(dataset)
 

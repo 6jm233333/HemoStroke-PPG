@@ -22,7 +22,7 @@ The study uses MIMIC-III as the internal development cohort and MC-MED as the fr
 
 ## Metrics
 
-Primary reporting includes accuracy, recall, precision, F1, F2, AUC, false-positive rate, true-positive rate, and patient-level false-alert burden. Summary benchmark tables are in `docs/benchmark_results.md`.
+Primary reporting includes accuracy, recall, precision, F1, F2, AUC, false-positive rate, true-positive rate, and file-level false-alert burden. Threshold-dependent metrics use the frozen operating point selected on MIMIC validation. Summary benchmark tables are in `docs/benchmark_results.md`.
 
 ## Known Limitations
 

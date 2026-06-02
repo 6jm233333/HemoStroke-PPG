@@ -36,11 +36,15 @@ These benchmark values are the study-level reference results associated with thi
 
 ## False-Alert Burden
 
-| Horizon | MIMIC FPR | MIMIC TPR | MIMIC Patient+ | MC-MED FPR | MC-MED TPR | MC-MED Patient+ |
+| Horizon | MIMIC FPR | MIMIC TPR | MIMIC ID+ | MC-MED FPR | MC-MED TPR | MC-MED ID+ |
 |---:|---:|---:|---:|---:|---:|---:|
 | 240 | 0.167 | 0.983 | 0.061 | 0.166 | 0.934 | 0.030 |
 | 300 | 0.288 | 0.965 | 0.145 | 0.197 | 0.940 | 0.038 |
 | 360 | 0.294 | 0.998 | 0.174 | 0.137 | 0.980 | 0.018 |
+
+`ID+` is the fraction of file-level evaluation identifiers with at least five
+consecutive positive 500-beat windows. These values use the frozen operating
+threshold selected on MIMIC validation.
 
 ## Robustness Checks
 

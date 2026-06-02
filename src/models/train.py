@@ -28,6 +28,7 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, TensorDataset, WeightedRandomSampler
 
+from src.analysis.operating_point import apply_binary_threshold, validate_threshold
 from src.models.lstm import LSTMClassifier
 from src.models.resnet1d import ResNet1D, resnet1d18
 
@@ -87,6 +88,7 @@ class TrainConfig:
     save_mean_std_csv: bool = True
     save_predictions_csv: bool = True
     save_confusion_matrix: bool = True
+    threshold: float = 0.7910
 
     external_validation_enabled: bool = True
     retrain_on_full_internal: bool = False
@@ -438,6 +440,7 @@ def predict_loader(
     model: nn.Module,
     loader: DataLoader,
     device: torch.device,
+    threshold: float,
 ) -> Dict[str, np.ndarray]:
     model.eval()
 
@@ -450,11 +453,11 @@ def predict_loader(
         xb = xb.to(device, non_blocking=True)
         logits = model(xb)
         probs = torch.softmax(logits, dim=1)
-        preds = torch.argmax(probs, dim=1)
+        preds = apply_binary_threshold(probs[:, 1].detach().cpu().numpy(), threshold)
 
         all_logits.append(logits.detach().cpu().numpy())
         all_probs.append(probs.detach().cpu().numpy())
-        all_preds.append(preds.detach().cpu().numpy())
+        all_preds.append(preds)
         all_trues.append(yb.detach().cpu().numpy())
 
     logits_np = np.concatenate(all_logits, axis=0)
@@ -476,13 +479,14 @@ def evaluate_loader(
     loader: DataLoader,
     criterion: nn.Module,
     device: torch.device,
+    threshold: float,
 ) -> Dict[str, Any]:
     model.eval()
 
     loss_sum = 0.0
     n_samples = 0
 
-    pred_bundle = predict_loader(model, loader, device=device)
+    pred_bundle = predict_loader(model, loader, device=device, threshold=threshold)
 
     for xb, yb in loader:
         xb = xb.to(device, non_blocking=True)
@@ -571,7 +575,7 @@ def fit_with_early_stopping(
 
     for epoch in range(1, cfg.epochs + 1):
         train_loss = train_one_epoch(model, train_loader, criterion, optimizer, device)
-        val_eval = evaluate_loader(model, val_loader, criterion, device)
+        val_eval = evaluate_loader(model, val_loader, criterion, device, threshold=cfg.threshold)
         val_metrics = val_eval["metrics"]
 
         score = metric_for_selection(val_metrics, cfg.monitor_metric)
@@ -886,7 +890,7 @@ def run_external_validation(
         )
         retrain_mode = "full_internal_fixed_epochs"
 
-        eval_res = evaluate_loader(final_model, external_loader, criterion, device)
+        eval_res = evaluate_loader(final_model, external_loader, criterion, device, threshold=cfg.threshold)
         metrics = eval_res["metrics"]
         pred_bundle = eval_res["pred_bundle"]
 
@@ -951,7 +955,7 @@ def run_external_validation(
             state = torch.load(ckpt_path, map_location=device)
             model.load_state_dict(state)
 
-            eval_res = evaluate_loader(model, external_loader, criterion, device)
+            eval_res = evaluate_loader(model, external_loader, criterion, device, threshold=cfg.threshold)
             metrics = eval_res["metrics"]
             pred_bundle = eval_res["pred_bundle"]
             fold_probs.append(pred_bundle["probs"])
@@ -988,7 +992,7 @@ def run_external_validation(
                 )
 
         mean_probs = np.mean(np.stack(fold_probs, axis=0), axis=0)
-        mean_preds = np.argmax(mean_probs, axis=1)
+        mean_preds = apply_binary_threshold(mean_probs[:, 1], cfg.threshold)
         ensemble_metrics = compute_metrics(y_external, mean_preds, mean_probs[:, 1])
         ensemble_metrics["loss"] = float(np.mean([row["loss"] for row in fold_rows]))
         confusion_for_export = confusion_matrix(y_external, mean_preds, labels=[0, 1])
@@ -1096,6 +1100,7 @@ def build_train_config(cfg_dict: Dict[str, Any]) -> TrainConfig:
         save_mean_std_csv=bool(eval_cfg.get("save_mean_std_csv", True)),
         save_predictions_csv=bool(eval_cfg.get("save_predictions_csv", True)),
         save_confusion_matrix=bool(eval_cfg.get("save_confusion_matrix", True)),
+        threshold=validate_threshold(float(eval_cfg.get("threshold", 0.7910))),
         external_validation_enabled=bool(external_cfg.get("enabled", True)),
         retrain_on_full_internal=bool(external_cfg.get("retrain_on_full_internal", False)),
         save_external_predictions=bool(external_cfg.get("save_external_predictions", True)),
@@ -1207,6 +1212,7 @@ def run_single_horizon(
         "n_splits": cfg.n_splits,
         "monitor_metric": cfg.monitor_metric,
         "positive_class_weight": cfg.positive_class_weight,
+        "operating_threshold": cfg.threshold,
     }
 
     if external_res is not None and spec.external_dir is not None:

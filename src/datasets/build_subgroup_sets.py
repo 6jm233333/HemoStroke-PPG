@@ -10,7 +10,6 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import PowerTransformer
 from tqdm import tqdm
 
 
@@ -208,17 +207,9 @@ def build_samples_for_one_file(
 
     df = df.sort_values("Time_Rel_Min", kind="mergesort")
 
-    # Numeric cleanup.
+    # Feature values are already produced by the frozen upstream pipeline.
+    # Keep window-level NaN exclusion consistent with the main packaging path.
     df[feature_cols] = df[feature_cols].replace([np.inf, -np.inf], np.nan)
-    df[feature_cols] = df[feature_cols].interpolate(method="linear", axis=0, limit_direction="both")
-    df[feature_cols] = df[feature_cols].bfill().ffill()
-
-    if df[feature_cols].isna().any().any():
-        return [], [], [], []
-
-    # Apply per-file Yeo-Johnson transformation and standardization.
-    pt = PowerTransformer(method="yeo-johnson", standardize=True)
-    df[feature_cols] = pt.fit_transform(df[feature_cols].values)
 
     # Split continuous time segments.
     time_diffs = df["Time_Rel_Min"].diff().fillna(0)
@@ -246,6 +237,9 @@ def build_samples_for_one_file(
             x_win = X_group[start:end]
             y_win_raw = y_group[start:end]
             t_win = t_group[start:end]
+
+            if not np.isfinite(x_win).all():
+                continue
 
             # Keep pre-onset windows only.
             if t_win[0] > 0:

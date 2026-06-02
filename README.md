@@ -11,8 +11,9 @@ Included:
 - Cohort mining, onset anchoring, and waveform alignment utilities.
 - MC-MED radiology-text normalization and reviewed-anchor-to-Pleth-index generation utilities.
 - PPG feature extraction, feature cleaning, relative-feature engineering, and temporal relabeling.
+- Standard main-experiment packaging for MIMIC train/validation/test arrays and frozen MC-MED test arrays.
 - ResNet-1D main model and LSTM baseline.
-- Patient-level split checks, evaluation, SHAP, ROC, subgroup, sensitivity, and quality-control scripts.
+- Patient-level split checks, thresholded evaluation, false-alert burden, SHAP, ROC, subgroup, sensitivity, and quality-control scripts.
 - Minimal tests for label logic, patient-level splitting, filter alignment, and model tensor shapes.
 
 Not included:
@@ -120,16 +121,30 @@ python -m src.data.mcmed.build_llm_input --config configs/mcmed_data.yaml
 python -m src.data.mcmed.build_stroke_index --config configs/mcmed_data.yaml
 python -m src.data.mcmed.filter_prewarning_segments --config configs/mcmed_data.yaml
 
-# 3. Extract and label PPG windows.
+# 3. Extract, clean, engineer, and label PPG windows.
 python -m src.features.extract_ppg_features --dataset mimic --feature-config configs/feature_extraction.yaml --data-config configs/mimic_data.yaml
 python -m src.features.extract_ppg_features --dataset mcmed --feature-config configs/feature_extraction.yaml --data-config configs/mcmed_data.yaml
+python -m src.features.clean_feature_table --input-dir data/processed/mimic/features_raw --output-dir data/processed/mimic/features_cleaned
+python -m src.features.clean_feature_table --input-dir data/processed/mcmed/features_raw --output-dir data/processed/mcmed/features_cleaned
+python -m src.features.engineer_features --input-dir data/processed/mimic/features_cleaned --output-dir data/processed/mimic/features_engineered
+python -m src.features.engineer_features --input-dir data/processed/mcmed/features_cleaned --output-dir data/processed/mcmed/features_engineered
 python -m src.labels.relabel_time_windows --config configs/feature_extraction.yaml --dataset mimic --output-dir data/processed/mimic/features_labeled
 python -m src.labels.relabel_time_windows --config configs/feature_extraction.yaml --dataset mcmed --output-dir data/processed/mcmed/features_labeled
 
-# 4. Train and evaluate the main model.
+# 4. Build the paper's MIMIC train/validation/test arrays and frozen MC-MED test arrays.
+python -m src.datasets.build_main_horizon_sets --config configs/feature_extraction.yaml
+
+# 5. Train and evaluate the main model.
 python -m src.models.train --config configs/training.yaml
 python -m src.models.evaluate --config configs/training.yaml
 ```
+
+Relative features use the paper-aligned frozen rule `(x - mu_base) / abs(mu_base)`,
+where `mu_base` is the mean over the initial stable period. The same
+MIMIC-defined preprocessing rule is applied unchanged to MC-MED. Main evaluation
+uses the `evaluation.threshold` operating point selected on MIMIC validation and
+applies it unchanged to internal reporting, frozen MC-MED evaluation, and
+false-alert analysis.
 
 Baseline:
 
@@ -146,6 +161,7 @@ python scripts/reproduce/figure_shap.py --help
 python scripts/reproduce/figure_temporal_cases.py --help
 python scripts/reproduce/figure_subgroup_f1.py --help
 python scripts/reproduce/table1_mcmed_cohort_stats.py --help
+python scripts/reproduce/table4_false_alert_burden.py --help
 python -m src.models.sensitivity --help
 ```
 

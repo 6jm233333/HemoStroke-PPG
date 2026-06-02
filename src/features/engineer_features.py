@@ -52,6 +52,9 @@ RAW_BASE_FEATURES = [
 ]
 
 COMPOSITE_FEATURES = ["NVI", "DSI", "NCI", "VSSI"]
+DEFAULT_BASELINE_FRAC = 0.10
+DEFAULT_BASELINE_MIN_ROWS = 5
+DEFAULT_BASELINE_METHOD = "mean"
 
 #  manifest
 COMMON_METADATA_COLS = [
@@ -250,9 +253,9 @@ def engineer_kinematic_features(
     group_col: Optional[str],
     sort_cols: Sequence[str],
     base_features: Sequence[str],
-    baseline_frac: float = 0.10,
-    baseline_min_rows: int = 5,
-    baseline_method: str = "median",
+    baseline_frac: float = DEFAULT_BASELINE_FRAC,
+    baseline_min_rows: int = DEFAULT_BASELINE_MIN_ROWS,
+    baseline_method: str = DEFAULT_BASELINE_METHOD,
     eps: float = 1e-6,
 ) -> pd.DataFrame:
     """
@@ -392,12 +395,25 @@ def process_one_file(
 # Manifest
 # =============================================================================
 
-def build_feature_manifest(output_dir: Path, logs: List[Dict[str, object]]) -> Dict[str, object]:
+def build_feature_manifest(
+    output_dir: Path,
+    logs: List[Dict[str, object]],
+    *,
+    baseline_frac: float,
+    baseline_min_rows: int,
+    baseline_method: str,
+) -> Dict[str, object]:
     manifest = {
         "raw_base_features": RAW_BASE_FEATURES,
         "composite_features": COMPOSITE_FEATURES,
         "derived_suffixes": ["_Rel", "_Vel", "_Accel"],
         "common_metadata_cols": COMMON_METADATA_COLS,
+        "frozen_preprocessing": {
+            "relative_feature_formula": "(x - mu_base) / abs(mu_base)",
+            "baseline_method": baseline_method,
+            "baseline_frac": baseline_frac,
+            "baseline_min_rows": baseline_min_rows,
+        },
         "n_processed_files": int(sum(1 for x in logs if str(x.get("status", "")).startswith("ok"))),
     }
 
@@ -436,19 +452,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--baseline-frac",
         type=float,
-        default=0.10,
+        default=DEFAULT_BASELINE_FRAC,
         help="Fraction of initial rows used as subject/file baseline for *_Rel.",
     )
     parser.add_argument(
         "--baseline-min-rows",
         type=int,
-        default=5,
+        default=DEFAULT_BASELINE_MIN_ROWS,
         help="Minimum number of initial rows used for baseline calculation.",
     )
     parser.add_argument(
         "--baseline-method",
         type=str,
-        default="median",
+        default=DEFAULT_BASELINE_METHOD,
         choices=["median", "mean"],
         help="How to compute the baseline value within the initial stable window.",
     )
@@ -522,7 +538,13 @@ def main() -> None:
     log_path = output_dir / "feature_engineering_log.csv"
     log_df.to_csv(log_path, index=False, encoding="utf-8-sig")
 
-    build_feature_manifest(output_dir, logs)
+    build_feature_manifest(
+        output_dir,
+        logs,
+        baseline_frac=args.baseline_frac,
+        baseline_min_rows=args.baseline_min_rows,
+        baseline_method=args.baseline_method,
+    )
 
     print("-" * 88)
     print(f"Done. Success: {ok_count} | Failed: {err_count}")

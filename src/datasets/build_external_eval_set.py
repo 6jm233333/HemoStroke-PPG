@@ -11,6 +11,18 @@ import pandas as pd
 import yaml
 from tqdm import tqdm
 
+from src.features.engineer_features import (
+    DEFAULT_BASELINE_FRAC,
+    DEFAULT_BASELINE_METHOD,
+    DEFAULT_BASELINE_MIN_ROWS,
+    COMPOSITE_FEATURES,
+    RAW_BASE_FEATURES,
+    engineer_composite_features,
+    engineer_kinematic_features,
+    infer_group_col,
+    infer_sort_cols,
+)
+
 
 EXCLUDE_PREFIXES = ("Summary_",)
 EXCLUDE_NAMES = {
@@ -49,18 +61,6 @@ DEFAULT_METADATA_COLS = [
     "Gap_Hours",
 ]
 
-RAW_BASES = [
-    "T_pi", "T_sys", "T_dia", "T_sp", "IPR", "Tsys_Tdia", "Tsp_Tpi",
-    "A_on", "A_sp", "A_off", "Pulse_Amplitude", "SI",
-    "T_u", "Tu_Tpi", "T_v", "T_a", "Ta_Tpi", "T_b", "Tb_Tpi", "T_c", "Tc_Tpi",
-    "T_d", "Td_Tpi", "T_e", "Te_Tpi", "T_f", "Tf_Tpi",
-    "T_p1", "Tp1_Tpi", "T_p2", "Tp2_Tpi", "Tu_Ta_Tpi",
-    "CV_T_pi", "CV_T_sys", "CV_Pulse_Amplitude",
-]
-
-COMPOSITE_FEATURES = ["NVI", "DSI", "NCI", "VSSI"]
-
-
 def load_yaml(path: str | Path) -> dict[str, Any]:
     with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
@@ -98,69 +98,6 @@ def fill_missing_values(df: pd.DataFrame) -> pd.DataFrame:
     if non_numeric_cols:
         df[non_numeric_cols] = df[non_numeric_cols].ffill().bfill().fillna("Unknown")
 
-    return df
-
-
-def engineer_composite_features(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    eps = 1e-6
-    cols = set(df.columns)
-
-    if {"T_f", "T_p2", "IPR", "CV_T_pi"}.issubset(cols):
-        df["NVI"] = (df["T_f"] + df["T_p2"] + df["IPR"]) / (df["CV_T_pi"] + eps)
-
-    if {"T_f", "T_p2", "T_pi"}.issubset(cols):
-        df["DSI"] = (df["T_f"] + df["T_p2"]) / (df["T_pi"] + eps)
-
-    if {"T_f", "CV_T_pi"}.issubset(cols):
-        df["NCI"] = df["T_f"] / ((df["CV_T_pi"] ** 2) + eps)
-
-    if {"IPR", "T_dia"}.issubset(cols):
-        df["VSSI"] = (df["IPR"] ** 2) / (df["T_dia"] + eps)
-
-    return df
-
-
-def engineer_kinematic_features(
-    df: pd.DataFrame,
-    baseline_fraction: float = 0.10,
-    min_baseline_points: int = 5,
-) -> pd.DataFrame:
-    df = df.copy()
-
-    if "Time_Rel_Min" in df.columns:
-        df = df.sort_values("Time_Rel_Min", kind="mergesort")
-    elif "Beat_Idx" in df.columns:
-        df = df.sort_values("Beat_Idx", kind="mergesort")
-
-    target_cols = [c for c in RAW_BASES + COMPOSITE_FEATURES if c in df.columns]
-    if not target_cols:
-        return df
-
-    baseline_len = max(min_baseline_points, int(len(df) * baseline_fraction))
-    new_features: dict[str, pd.Series] = {}
-
-    for col in target_cols:
-        s = pd.to_numeric(df[col], errors="coerce")
-        if s.isna().all():
-            continue
-
-        baseline = s.iloc[:baseline_len].median()
-        if pd.isna(baseline) or abs(baseline) < 1e-12:
-            baseline = 1e-6
-
-        rel_series = (s - baseline) / baseline
-        vel_series = rel_series.diff().fillna(0)
-        acc_series = vel_series.diff().fillna(0)
-
-        new_features[f"{col}_Rel"] = rel_series
-        new_features[f"{col}_Vel"] = vel_series
-        new_features[f"{col}_Accel"] = acc_series
-
-    if new_features:
-        df = pd.concat([df, pd.DataFrame(new_features, index=df.index)], axis=1)
-
-    df = df.replace([np.inf, -np.inf], 0)
     return df
 
 
@@ -204,6 +141,7 @@ def process_one_file(
     engineer_features_flag: bool,
     baseline_fraction: float,
     min_baseline_points: int,
+    baseline_method: str,
 ) -> dict[str, Any]:
     df = pd.read_csv(file_path, low_memory=False)
     rows_in = len(df)
@@ -217,8 +155,12 @@ def process_one_file(
         df = engineer_composite_features(df)
         df = engineer_kinematic_features(
             df,
-            baseline_fraction=baseline_fraction,
-            min_baseline_points=min_baseline_points,
+            group_col=infer_group_col(df),
+            sort_cols=infer_sort_cols(df),
+            base_features=[c for c in RAW_BASE_FEATURES + COMPOSITE_FEATURES if c in df.columns],
+            baseline_frac=baseline_fraction,
+            baseline_min_rows=min_baseline_points,
+            baseline_method=baseline_method,
         )
 
     existing_metadata = [c for c in metadata_cols if c in df.columns]
@@ -270,8 +212,9 @@ def main() -> None:
     ensure_dir(output_dir)
 
     fx_cfg = cfg.get("feature_engineering", {})
-    baseline_fraction = float(fx_cfg.get("baseline_fraction", 0.10))
-    min_baseline_points = int(fx_cfg.get("min_baseline_points", 5))
+    baseline_fraction = float(fx_cfg.get("baseline_fraction", DEFAULT_BASELINE_FRAC))
+    min_baseline_points = int(fx_cfg.get("min_baseline_points", DEFAULT_BASELINE_MIN_ROWS))
+    baseline_method = str(fx_cfg.get("baseline_method", DEFAULT_BASELINE_METHOD))
 
     selected_features = resolve_selected_features(
         selected_features_json=args.selected_features_json,
@@ -302,6 +245,7 @@ def main() -> None:
                 engineer_features_flag=not args.skip_engineering,
                 baseline_fraction=baseline_fraction,
                 min_baseline_points=min_baseline_points,
+                baseline_method=baseline_method,
             )
             logs.append(info)
         except Exception as e:
@@ -321,6 +265,12 @@ def main() -> None:
         "input_dir": str(input_dir),
         "output_dir": str(output_dir),
         "skip_engineering": bool(args.skip_engineering),
+        "frozen_preprocessing": {
+            "relative_feature_formula": "(x - mu_base) / abs(mu_base)",
+            "baseline_method": baseline_method,
+            "baseline_fraction": baseline_fraction,
+            "min_baseline_points": min_baseline_points,
+        },
     }
     manifest_path = output_dir / "external_eval_manifest.json"
     with open(manifest_path, "w", encoding="utf-8") as f:

@@ -65,12 +65,17 @@ python -m src.features.extract_ppg_features --dataset mcmed --feature-config con
 Clean and engineer feature tables if needed:
 
 ```bash
-python -m src.features.clean_feature_table --help
-python -m src.features.engineer_features --help
+python -m src.features.clean_feature_table --input-dir data/processed/mimic/features_raw --output-dir data/processed/mimic/features_cleaned
+python -m src.features.clean_feature_table --input-dir data/processed/mcmed/features_raw --output-dir data/processed/mcmed/features_cleaned
+python -m src.features.engineer_features --input-dir data/processed/mimic/features_cleaned --output-dir data/processed/mimic/features_engineered
+python -m src.features.engineer_features --input-dir data/processed/mcmed/features_cleaned --output-dir data/processed/mcmed/features_engineered
 python -m src.features.select_features --help
 ```
 
-The final 17-feature set is fixed in `configs/feature_set_17.json`.
+The final 17-feature set is fixed in `configs/feature_set_17.json`. Relative
+features use the frozen paper-aligned rule `(x - mu_base) / abs(mu_base)`, where
+`mu_base` is the mean over the initial stable period. The same MIMIC-defined
+preprocessing rule is reused unchanged on MC-MED.
 
 ## 4. Temporal Labeling and Horizon Packaging
 
@@ -90,6 +95,16 @@ test_data.npy, test_label.npy, test_pid.npy
 ```
 
 For external MC-MED testing, `test_*` arrays are sufficient.
+
+Build all main arrays with the standard entry point:
+
+```bash
+python -m src.datasets.build_main_horizon_sets --config configs/feature_extraction.yaml
+```
+
+This writes patient-disjoint MIMIC `train_*`, `val_*`, and `test_*` arrays and
+MC-MED `test_*` arrays under the configured `240min`, `300min`, and `360min`
+folders.
 
 ## 5. Main Models
 
@@ -116,11 +131,37 @@ python scripts/reproduce/figure_roc.py --help
 python scripts/reproduce/figure_shap.py --help
 python scripts/reproduce/figure_temporal_cases.py --help
 python scripts/reproduce/figure_subgroup_f1.py --help
+python scripts/reproduce/table4_false_alert_burden.py --help
 ```
 
 Regenerated tables and figures should be written to `outputs/`. Manuscript source, compiled PDFs, and paper-ready figure files are intentionally outside the GitHub repository.
 
-## 7. Audit Checklist
+## 7. Frozen Operating Threshold and False-Alert Burden
+
+`configs/training.yaml` records the operating threshold selected on MIMIC
+validation. `src.models.train` and `src.models.evaluate` apply this threshold
+unchanged to internal reporting and frozen MC-MED testing. They do not use
+`argmax` as an implicit 0.5 operating point.
+
+For each high-risk non-stroke cohort and horizon, generate the Table IV row from
+window-level prediction scores:
+
+```bash
+python scripts/reproduce/table4_false_alert_burden.py \
+  --predictions outputs/controls/mimic_240min_predictions.csv \
+  --output-csv outputs/controls/mimic_240min_false_alert.csv \
+  --identifier-col pid \
+  --order-col window_index \
+  --cohort MIMIC-III \
+  --horizon-minutes 240 \
+  --stroke-tpr 0.9833
+```
+
+The script reads the frozen threshold from `configs/training.yaml`, reports
+packaged and NaN-free window counts, and computes `ID+` as the fraction of
+file-level identifiers with at least five consecutive positive windows.
+
+## 8. Audit Checklist
 
 - Use patient-level splits only.
 - Verify no patient ID appears in more than one fold partition.

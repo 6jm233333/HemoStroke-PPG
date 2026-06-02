@@ -20,6 +20,7 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import StratifiedGroupKFold
 from torch.utils.data import DataLoader, TensorDataset
+from src.analysis.operating_point import apply_binary_threshold, validate_threshold
 from src.models.lstm import LSTMClassifier
 from src.models.resnet1d import resnet1d18
 
@@ -56,6 +57,7 @@ class EvalConfig:
     ignore_label_value: int = -1
     drop_ignore_label: bool = True
     positive_class_weight: float = 3.0
+    threshold: float = 0.7910
 
     save_internal_predictions_csv: bool = True
     save_external_predictions_csv: bool = True
@@ -146,6 +148,7 @@ def build_eval_config(cfg_dict: Dict[str, Any]) -> EvalConfig:
         ignore_label_value=int(data_cfg.get("ignore_label_value", -1)),
         drop_ignore_label=bool(data_cfg.get("drop_ignore_label", True)),
         positive_class_weight=float(pos_weight),
+        threshold=validate_threshold(float(eval_cfg.get("threshold", 0.7910))),
         save_internal_predictions_csv=bool(eval_cfg.get("save_predictions_csv", True)),
         save_external_predictions_csv=bool(external_cfg.get("save_external_predictions", True)),
         save_fold_metrics_csv=bool(eval_cfg.get("save_fold_metrics_csv", True)),
@@ -383,7 +386,12 @@ def save_confusion_matrix_csv(cm: np.ndarray, path: Path) -> None:
 # =============================================================================
 
 @torch.no_grad()
-def predict_loader(model: nn.Module, loader: DataLoader, device: torch.device) -> Dict[str, np.ndarray]:
+def predict_loader(
+    model: nn.Module,
+    loader: DataLoader,
+    device: torch.device,
+    threshold: float,
+) -> Dict[str, np.ndarray]:
     model.eval()
 
     all_logits: List[np.ndarray] = []
@@ -396,11 +404,11 @@ def predict_loader(model: nn.Module, loader: DataLoader, device: torch.device) -
 
         logits = model(xb)
         probs = torch.softmax(logits, dim=1)
-        preds = torch.argmax(probs, dim=1)
+        preds = apply_binary_threshold(probs[:, 1].detach().cpu().numpy(), threshold)
 
         all_logits.append(logits.detach().cpu().numpy())
         all_probs.append(probs.detach().cpu().numpy())
-        all_preds.append(preds.detach().cpu().numpy())
+        all_preds.append(preds)
         all_trues.append(yb.detach().cpu().numpy())
 
     logits_np = np.concatenate(all_logits, axis=0)
@@ -428,6 +436,7 @@ def evaluate_checkpoint(
     device: torch.device,
     num_workers: int,
     pin_memory: bool,
+    threshold: float,
 ) -> Dict[str, Any]:
     input_dim = int(x_eval.shape[-1])
     model = build_model(input_dim=input_dim, output_dim=2, model_cfg=model_cfg).to(device)
@@ -448,7 +457,7 @@ def evaluate_checkpoint(
     loss_sum = 0.0
     n_samples = 0
 
-    pred_bundle = predict_loader(model, loader, device=device)
+    pred_bundle = predict_loader(model, loader, device=device, threshold=threshold)
 
     for xb, yb in loader:
         xb = xb.to(device, non_blocking=True)
@@ -553,6 +562,7 @@ def evaluate_internal_cv(
             device=device,
             num_workers=cfg.num_workers,
             pin_memory=cfg.pin_memory,
+            threshold=cfg.threshold,
         )
 
         metrics = eval_res["metrics"]
@@ -662,6 +672,7 @@ def evaluate_external_fivefold(
             device=device,
             num_workers=cfg.num_workers,
             pin_memory=cfg.pin_memory,
+            threshold=cfg.threshold,
         )
 
         metrics = eval_res["metrics"]
@@ -766,6 +777,7 @@ def evaluate_external_single_model(
         device=device,
         num_workers=cfg.num_workers,
         pin_memory=cfg.pin_memory,
+        threshold=cfg.threshold,
     )
 
     metrics = eval_res["metrics"]
@@ -945,6 +957,7 @@ def run_single_horizon_eval(
         "external_n_patients": external_fivefold_res["n_patients"] if external_fivefold_res is not None else None,
         "external_eval_mode": "fivefold_checkpoints_on_test" if external_fivefold_res is not None else None,
         "f2_enabled": True,
+        "operating_threshold": cfg.threshold,
     }
     save_json(manifest, spec.output_dir / "eval_manifest.json")
 
