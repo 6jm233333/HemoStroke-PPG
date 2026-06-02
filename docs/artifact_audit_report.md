@@ -27,7 +27,7 @@ The repository is now suitable for code-path inspection, environment setup, conf
 
 - Title: aligned with "In-Hospital Stroke Prediction from PPG-Derived Hemodynamic Features".
 - Datasets: aligned with MIMIC-III as internal development/patient-level validation and MC-MED as frozen external evaluation.
-- Cohort sizes: benchmark documentation reports 176 MIMIC-III stroke patients and 158 MC-MED stroke patients.
+- Cohort sizes: benchmark documentation reports 176 MIMIC-III stroke patients and 154 MC-MED stroke patients.
 - Horizons: configs and docs use 240, 300, and 360 minutes, corresponding to 4 h, 5 h, and 6 h.
 - Feature set: `configs/feature_set_17.json` and `docs/feature_dictionary.md` document the 17 PPG-derived hemodynamic features.
 - Models: ResNet-1D is the main model and LSTM is the baseline; tests verify both accept `[batch, time, 17]` inputs.
