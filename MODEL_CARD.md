@@ -5,7 +5,7 @@
 - Model family: one-dimensional neural time-series classifiers.
 - Main model: ResNet-1D over PPG-derived hemodynamic feature windows.
 - Baseline: LSTM classifier.
-- Task: retrospective classification of pre-onset warning windows for in-hospital stroke prediction.
+- Task: retrospective within-case classification of pre-anchor warning windows versus earlier reference windows around clinically documented stroke anchors.
 - Horizons: 240, 300, and 360 minutes before documented stroke onset anchors.
 
 ## Intended Use
